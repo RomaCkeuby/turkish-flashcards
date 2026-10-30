@@ -1,0 +1,16 @@
+{
+  "name": "@turkish-flashcards/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/index.ts",
+    "start": "node --disable-warning=ExperimentalWarning dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --disable-warning=ExperimentalWarning --test src/database.test.ts src/onlineDictionary.test.ts src/hosting.test.ts",
+    "db:seed": "node --disable-warning=ExperimentalWarning src/seed.ts",
+    "db:check": "node --disable-warning=ExperimentalWarning src/check.ts",
+    "updates:build": "node --disable-warning=ExperimentalWarning src/buildUpdatePackage.ts"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "turkish-flashcards",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @turkish-flashcards/server --filter @turkish-flashcards/web dev",
+    "build": "pnpm -r build",
+    "start": "pnpm --filter @turkish-flashcards/server start",
+    "personal:start": "powershell -NoProfile -File scripts/Start-Personal.ps1",
+    "personal:stop": "powershell -NoProfile -File scripts/Stop-Personal.ps1",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "typescript": "^5.8.2"
+  }
+}

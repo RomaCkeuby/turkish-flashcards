@@ -1,0 +1,13 @@
+{
+  "createdAt": "2026-08-04T08:53:49.378Z",
+  "packageFile": "cards.jsonl.gz",
+  "recordCount": 600,
+  "schemaVersion": 1,
+  "sha256": "41941ea4b7792297e982b8975378a2f086c53fad1cb48cb06e6c73152b86754e",
+  "source": {
+    "license": "Wiktionary/Kaikki data, see source pages for license details",
+    "name": "Kaikki/Wiktionary",
+    "url": "https://kaikki.org/dictionary/rawdata.html"
+  },
+  "version": "kaikki-trwiktionary-2026-08-04"
+}
