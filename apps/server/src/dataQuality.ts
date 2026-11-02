@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 
 import { normalizeTurkishKey } from "./updatePackage.ts";
+import { correctKnownSense } from "./knownCorrections.ts";
 
 export function textContainsWholeTurkishWord(text: string, word: string) {
   const normalizedWord = normalizeTurkishKey(word);
@@ -45,6 +46,28 @@ export function isReliableExamplePair(record: {
 
 export function repairKnownDataQualityIssues(database: DatabaseSync) {
   const now = new Date().toISOString();
+  const rows = database.prepare(`SELECT id, turkish, russian, part_of_speech AS partOfSpeech,
+    example_turkish AS exampleTurkish FROM entries WHERE turkish = 'alma' AND russian = 'яблоко'
+      AND source_key NOT LIKE 'user:%' AND source_id NOT IN (SELECT id FROM sources WHERE source_key = 'user')`).all() as {
+      id: number; turkish: string; russian: string; partOfSpeech: string; exampleTurkish: string;
+    }[];
+  for (const row of rows) {
+    const corrected = correctKnownSense(row);
+    if (corrected === row) continue;
+    database.exec("BEGIN IMMEDIATE;");
+    try {
+      database.prepare("UPDATE entries SET russian = ?, part_of_speech = ?, updated_at = ? WHERE id = ?")
+        .run(corrected.russian, corrected.partOfSpeech, now, row.id);
+      database.prepare(`UPDATE entry_translation_items SET text = ?, source_name = 'Проверка значения alma',
+        source_url = 'https://en.wiktionary.org/wiki/alma#Turkish', updated_at = ?
+        WHERE entry_id = ? AND layer = 'base' AND position = 0`).run(corrected.russian, now, row.id);
+      for (const field of ["russian", "partOfSpeech"] as const) {
+        database.prepare(`INSERT INTO entry_change_log (entry_id, field, old_value_json, new_value_json, change_source, changed_at)
+          VALUES (?, ?, ?, ?, 'update', ?)`).run(row.id, field, JSON.stringify(row[field]), JSON.stringify(corrected[field]), now);
+      }
+      database.exec("COMMIT;");
+    } catch (error) { database.exec("ROLLBACK;"); throw error; }
+  }
   const badAkar = database.prepare(`
     SELECT id
     FROM entries

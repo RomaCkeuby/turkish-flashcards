@@ -49,6 +49,7 @@ export function saveEntryDraft(id: number, draft: EntryDraft, baseline: EntryDra
 export const fieldLabels: Record<string, string> = {
   turkish: "Турецкое слово", russian: "Русский перевод", partOfSpeech: "Часть речи", category: "Категория",
   exampleTurkish: "Пример на турецком", exampleRussian: "Перевод примера", tags: "Теги", status: "Статус", created: "Создание карточки",
+  merge: "Слияние карточек",
 };
 export const statusLabels = { ACTIVE: "Активна", DISABLED: "Отключена", ARCHIVED: "В архиве" } as const;
 
@@ -58,6 +59,10 @@ export function historyValue(value: string) {
     if (parsed === null || parsed === "") return "не задано";
     if (Array.isArray(parsed)) return parsed.length ? parsed.join(", ") : "нет";
     if (typeof parsed === "string") return statusLabels[parsed as keyof typeof statusLabels] ?? parsed;
+    if (typeof parsed === "object" && "sourceId" in parsed && "source" in parsed) {
+      const source = parsed.source as { turkish?: string; russian?: string } | null;
+      return `Добавлена карточка №${String(parsed.sourceId)}: ${source?.turkish ?? ""} — ${source?.russian ?? ""}`;
+    }
     if (typeof parsed === "object") return Object.entries(parsed)
       .map(([key, item]) => `${fieldLabels[key] ?? key}: ${String(item)}`).join("; ");
     return String(parsed);

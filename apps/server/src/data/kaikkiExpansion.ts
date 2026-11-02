@@ -155,8 +155,8 @@ export const kaikkiExpansion: KaikkiExpansionRecord[] = [
   },
   {
     turkish: "alma",
-    russian: "яблоко",
-    partOfSpeech: "noun",
+    russian: "взятие; получение; покупка; принятие (от almak)",
+    partOfSpeech: "отглагольное существительное",
     exampleTurkish: "Karar alma zamanı.",
     exampleRussian: "Пора принимать решение!",
     exampleSourceUrl: "https://tatoeba.org/en/sentences/show/4289325",

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { confirmOnlineWord, fetchEntries, searchOnlineWords, type OnlineWord } from "../api";
+import { LocalWordCheck } from "../components/EntryQualityPanel";
 
 export function OnlineWordSearch({ query }: { query: string }) {
   const navigate = useNavigate();
@@ -86,6 +87,10 @@ export function OnlineWordSearch({ query }: { query: string }) {
           <h3>{word.turkish}</h3>
           <span>{word.partOfSpeech}</span>
           <p>{word.russian}</p>
+          <LocalWordCheck word={{ ...word,
+            exampleTurkish: word.examples?.find(example => example.id === selectedExamples[word.id])?.turkish ?? word.exampleTurkish,
+            exampleRussian: word.examples?.find(example => example.id === selectedExamples[word.id])?.russian ?? word.exampleRussian,
+          }} />
           {word.sourceName !== "Tatoeba" && word.exampleTurkish && word.exampleRussian ? (
             <blockquote>{word.exampleTurkish}<br /><em>{word.exampleRussian}</em></blockquote>
           ) : word.sourceName !== "Tatoeba" && !word.examples?.length ? <p className="statusMessage">Переводной пример в источниках отсутствует.</p> : null}

@@ -1,9 +1,12 @@
-import { lazy, Suspense, useEffect } from "react";
-import { NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { BookOpen, House, Layers, Settings } from "lucide-react";
 
 import { DashboardPage } from "./pages/DashboardPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { initialAppMode, type AppMode } from "./appMode";
+import { PublicDeckProvider } from "./publicDeck";
+const GuestRoutes = lazy(() => import("./pages/GuestPages").then(module => ({ default: module.GuestRoutes })));
 const CardDetailPage = lazy(() => import("./pages/CardDetailPage").then(module => ({ default: module.CardDetailPage })));
 const DictionaryPage = lazy(() => import("./pages/DictionaryPage").then(module => ({ default: module.DictionaryPage })));
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then(module => ({ default: module.SettingsPage })));
@@ -18,6 +21,9 @@ const navItems = [
 
 export function App() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [mode, setMode] = useState<AppMode>(() => initialAppMode(import.meta.env.VITE_STATIC_SITE === "1"));
+  const switchMode = (next: AppMode) => { if (next !== mode) { setMode(next); navigate("/"); } };
   useEffect(() => { window.scrollTo(0, 0); }, [location.pathname]);
   return (
     <div className="appShell">
@@ -26,7 +32,7 @@ export function App() {
           <span className="brandMark">TR</span>
           <div>
             <p className="brandTitle">Turkish Flashcards</p>
-            <p className="brandSubtitle">Личные карточки</p>
+            <p className="brandSubtitle">{mode === "guest" ? "Базовая подборка" : "Личные карточки"}</p>
           </div>
         </div>
 
@@ -43,11 +49,16 @@ export function App() {
             </NavLink>
           ))}
         </nav>
-        <p className="sidebarFootnote">Личная коллекция<br />TR / RU</p>
+        <p className="sidebarFootnote">{mode === "guest" ? "Свободная тренировка" : "Серверная коллекция"}<br />TR / RU</p>
       </aside>
 
       <main className="content">
+        <div className="appModeBar">
+          <div className="segmentedControl" aria-label="Режим приложения"><button type="button" aria-pressed={mode === "guest"} onClick={() => switchMode("guest")}>Свободная тренировка</button><button type="button" aria-pressed={mode === "server"} onClick={() => switchMode("server")}>Сервер на ПК</button></div>
+          <p>{mode === "guest" ? "Работает без домашнего сервера · без записи в аккаунт" : "Личная коллекция и прогресс · требуется доступный сервер"}</p>
+        </div>
         <Suspense fallback={<p className="statusMessage" role="status">Загружаем…</p>}>
+        {mode === "guest" ? <PublicDeckProvider><GuestRoutes /></PublicDeckProvider> :
         <Routes>
           <Route element={<DashboardPage />} path="/" />
           <Route element={<StudyPage />} path="/study" />
@@ -56,6 +67,7 @@ export function App() {
           <Route element={<SettingsPage />} path="/settings" />
           <Route element={<NotFoundPage />} path="*" />
         </Routes>
+        }
         </Suspense>
       </main>
     </div>

@@ -110,6 +110,7 @@ export type DictionaryImportPreview = {
 };
 
 export type EntryDetail = {
+  removal: { kind: "deleted" | "merged"; targetId: number | null; removedAt: string } | null;
   base: DictionaryEntry;
   cards: {
     direction: CardDirection;
@@ -359,4 +360,46 @@ export function prepareDictionaryImport(options: { limit: number; query?: string
 
 export function applyDictionaryImport() {
   return request<UpdatePreview>("/dictionary/import/apply", { method: "POST" });
+}
+
+export type LocalQuality = {
+  warnings: string[];
+  matches: { id: number; turkish: string; russian: string; partOfSpeech: string; sameWord: boolean; sharedMeanings: string[] }[];
+};
+export type QualityReport = {
+  entryId: number; checkedAt: string; local: LocalQuality;
+  turkishDictionary: { sourceUrl: string; status: string; definitions: string[] };
+  online: { query: string; sourceUrl: string; status: string; candidates: {
+    turkish: string; russian: string; partOfSpeech: string; sourceUrl: string;
+  }[] }[];
+};
+export type DictionaryAudit = {
+  checkedAt: string; total: number;
+  groups: { key: string; entries: DictionaryEntry[] }[];
+  duplicateWords: { key: string; entries: DictionaryEntry[] }[];
+  exampleWarnings: DictionaryEntry[];
+};
+export function checkLocalWord(word: EntryPatch, excludeId?: number, signal?: AbortSignal) {
+  return request<LocalQuality>("/dictionary/check-local", { method: "POST", signal,
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...word, excludeId }) });
+}
+export function verifyEntry(entryId: number, signal?: AbortSignal) {
+  return request<QualityReport>(`/entries/${entryId}/verify`, { method: "POST", signal });
+}
+export function auditDictionary(signal?: AbortSignal) {
+  return request<DictionaryAudit>("/dictionary/audit", { signal });
+}
+export function deleteEntry(entryId: number) {
+  return request<EntryDetail>(`/entries/${entryId}`, { method: "DELETE" });
+}
+export function restoreEntry(entryId: number) {
+  return request<EntryDetail>(`/entries/${entryId}/restore`, { method: "POST" });
+}
+export function fetchRemovedEntries(signal?: AbortSignal) {
+  return request<(DictionaryEntry & { removal: EntryDetail["removal"] })[]>("/dictionary/removed", { signal });
+}
+export function mergeEntries(source: EntryDetail, target: EntryDetail) {
+  return request<EntryDetail>(`/entries/${source.effective.id}/merge`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetId: target.effective.id,
+      sourceUpdatedAt: source.effective.updatedAt, targetUpdatedAt: target.effective.updatedAt }) });
 }

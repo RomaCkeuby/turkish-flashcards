@@ -1,0 +1,2 @@
+# Public manifests hash the exact JSON bytes; never rewrite their newlines on checkout.
+apps/web/public/decks/*.json -text

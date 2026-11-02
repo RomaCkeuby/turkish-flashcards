@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { correctKnownSense } from "./knownCorrections.ts";
 
 export type UpdateCardRecord = {
   category: string;
@@ -122,7 +123,7 @@ export function readUpdatePackage(packageDirectory = defaultPackageDirectory) {
     .toString("utf8")
     .split("\n")
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as UpdateCardRecord);
+    .map((line) => correctKnownSense(JSON.parse(line) as UpdateCardRecord));
 
   return { manifest, records };
 }

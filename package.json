@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "pnpm --parallel --filter @turkish-flashcards/server --filter @turkish-flashcards/web dev",
     "build": "pnpm -r build",
+    "decks:build": "pnpm --filter @turkish-flashcards/server decks:build",
+    "build:static": "pnpm decks:build && pnpm --filter @turkish-flashcards/web build:static",
     "start": "pnpm --filter @turkish-flashcards/server start",
     "personal:start": "powershell -NoProfile -File scripts/Start-Personal.ps1",
     "personal:stop": "powershell -NoProfile -File scripts/Stop-Personal.ps1",

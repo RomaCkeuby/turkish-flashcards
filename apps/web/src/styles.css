@@ -331,4 +331,36 @@ kbd { padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; backg
   .onlineWordResults { gap: 14px; }
 }
 @media (max-height: 590px) { .studyPage { height: 620px; min-height: 620px; } }
+.qualityPanel, .qualityCheck { display: grid; gap: 12px; }
+.qualityWarning { color: #785219; background: #fff7e6; padding: 12px 14px; border-radius: 8px; margin: 0; overflow-wrap: anywhere; }
+.qualityMatches { padding-left: 22px; display: grid; gap: 8px; max-height: 22rem; overflow-y: auto; }
+.qualityCandidate { border-top: 1px solid var(--line); padding: 10px 0; }
+.qualityPreview { border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.dangerButton { color: #a02d2d; }
+.appModeBar { max-width: 1240px; margin: 0 auto 24px; padding-bottom: 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.appModeBar p { margin: 0; max-width: 290px; font-size: 12px; color: var(--muted); }
+.appModeBar .segmentedControl { flex-wrap: wrap; }
+.guestFilters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.guestDictionaryList { display: grid; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); overflow: hidden; }
+.guestDictionaryEntry { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 6px 20px; padding: 16px; text-decoration: none; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.guestDictionaryEntry:last-child { border-bottom: 0; }
+.guestDictionaryEntry:hover { background: var(--accent-soft); }
+.guestDictionaryEntry small { grid-column: 1 / -1; color: var(--muted); }
+.guestSources { font-size: 11px; color: var(--muted); padding-left: 16px; margin: 8px 0 0; overflow-wrap: anywhere; display: grid; gap: 5px; }
+.guestStudy .studyPreview { min-height: 320px; }
+.guestStudy .cardPrompt { overflow-wrap: anywhere; }
+.guestStudy .studyCardLayout { min-height: 320px; }
+.guestRoundDone { padding: 32px 0; }
+.guestStudy .reviewActions { position: static; }
+@media (max-width: 700px) {
+  .appModeBar { display: grid; gap: 8px; margin-bottom: 20px; }
+  .appModeBar .segmentedControl { width: 100%; }
+  .appModeBar .segmentedControl button { flex: 1; font-size: 12px; padding: 10px 8px; }
+  .appModeBar p { max-width: none; }
+  .guestFilters { grid-template-columns: minmax(0, 1fr); }
+  .guestDictionaryEntry { gap: 6px 12px; padding: 14px; }
+  .guestStudy .studyCardLayout { grid-template-columns: minmax(0, 1fr); }
+}
+.primaryButton.dangerButton { background: #a02d2d; color: white; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }

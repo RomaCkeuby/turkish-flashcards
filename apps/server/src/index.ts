@@ -4,6 +4,7 @@ import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSiteHandler } from "./hosting.ts";
 import { searchAllOnlineSources, confirmOnlineWord } from "./onlineDictionary.ts";
+import { auditDictionary, checkLocalEntry, verifyEntry } from "./entryQuality.ts";
 
 import {
   applyEntryRefresh,
@@ -11,6 +12,7 @@ import {
 } from "./cardRefresh.ts";
 import {
   createUserEntry,
+  deleteEntry, restoreEntry, mergeEntries, getRemovedEntries,
   getEntries,
   getEntryFilterOptions,
   getEntryDetail,
@@ -109,6 +111,53 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+
+  if (request.method === "GET" && url.pathname === "/api/dictionary/audit") {
+    sendJson(response, 200, auditDictionary(database)); return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/dictionary/removed") {
+    sendJson(response, 200, getRemovedEntries(database)); return;
+  }
+  if (request.method === "POST" && url.pathname === "/api/dictionary/check-local") {
+    let body: unknown;
+    try { body = await readJsonBody(request); } catch { sendJson(response, 400, { error: "Некорректный JSON." }); return; }
+    const word = body as { turkish?: unknown; russian?: unknown; excludeId?: number; exampleTurkish?: unknown; exampleRussian?: unknown } | null;
+    if (!word || typeof word.turkish !== "string" || typeof word.russian !== "string") {
+      sendJson(response, 400, { error: "Укажите слово и перевод." }); return;
+    }
+    sendJson(response, 200, checkLocalEntry(database, { turkish: word.turkish, russian: word.russian,
+      exampleTurkish: typeof word.exampleTurkish === "string" ? word.exampleTurkish : "",
+      exampleRussian: typeof word.exampleRussian === "string" ? word.exampleRussian : "" }, word.excludeId)); return;
+  }
+  const qualityMatch = url.pathname.match(/^\/api\/entries\/(\d+)\/verify$/);
+  if (request.method === "POST" && qualityMatch) {
+    const report = await verifyEntry(database, Number(qualityMatch[1]));
+    sendJson(response, report ? 200 : 404, report ?? { error: "Карточка недоступна." }); return;
+  }
+  const restoreMatch = url.pathname.match(/^\/api\/entries\/(\d+)\/restore$/);
+  if (request.method === "POST" && restoreMatch) {
+    const detail = restoreEntry(database, Number(restoreMatch[1]));
+    sendJson(response, detail ? 200 : 404, detail ?? { error: "Карточка не найдена." }); return;
+  }
+  const mergeMatch = url.pathname.match(/^\/api\/entries\/(\d+)\/merge$/);
+  if (request.method === "POST" && mergeMatch) {
+    let body: unknown;
+    try { body = await readJsonBody(request); } catch { sendJson(response, 400, { error: "Некорректный JSON." }); return; }
+    const options = body as { targetId?: unknown; sourceUpdatedAt?: unknown; targetUpdatedAt?: unknown } | null;
+    if (!options || !Number.isSafeInteger(options.targetId)) { sendJson(response, 400, { error: "Выберите итоговую карточку." }); return; }
+    const source = getEntryDetail(database, Number(mergeMatch[1]));
+    const target = getEntryDetail(database, options.targetId as number);
+    if (!source || !target || source.effective.updatedAt !== options.sourceUpdatedAt || target.effective.updatedAt !== options.targetUpdatedAt) {
+      sendJson(response, 409, { error: "Карточки изменились. Повторите предпросмотр слияния." }); return;
+    }
+    const detail = mergeEntries(database, source.effective.id, target.effective.id);
+    sendJson(response, detail ? 200 : 404, detail ?? { error: "Карточка не найдена." }); return;
+  }
+  const deleteMatch = url.pathname.match(/^\/api\/entries\/(\d+)$/);
+  if (request.method === "DELETE" && deleteMatch) {
+    const detail = deleteEntry(database, Number(deleteMatch[1]));
+    sendJson(response, detail ? 200 : 404, detail ?? { error: "Карточка не найдена." }); return;
+  }
 
   if (request.method === "GET" && url.pathname === "/api/dictionary/online") {
     const query = (url.searchParams.get("query") ?? "").trim();

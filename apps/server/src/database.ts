@@ -35,6 +35,7 @@ export type DictionaryEntry = {
 };
 
 export type EntryDetail = {
+  removal: { kind: "deleted" | "merged"; targetId: number | null; removedAt: string } | null;
   base: DictionaryEntry;
   cards: {
     direction: CardDirection;
@@ -292,6 +293,12 @@ function migrate(database: DatabaseSync) {
     );
 
     CREATE INDEX IF NOT EXISTS entry_change_log_entry_index ON entry_change_log(entry_id, changed_at);
+    CREATE TABLE IF NOT EXISTS entry_removals (
+      entry_id INTEGER PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('deleted', 'merged')),
+      target_id INTEGER REFERENCES entries(id),
+      removed_at TEXT NOT NULL
+    );
   `);
 
   const columns = database.prepare("PRAGMA table_info(review_state)").all() as { name: string }[];
@@ -478,11 +485,12 @@ export function getStats(database: DatabaseSync) {
       FROM entries
       LEFT JOIN entry_overrides ON entry_overrides.entry_id = entries.id
       WHERE entries.active = 1
+        AND NOT EXISTS (SELECT 1 FROM entry_removals WHERE entry_id = entries.id)
         AND COALESCE(entry_overrides.status, 'ACTIVE') = 'ACTIVE'
     `,
   ).get() as CountRow;
   const cards = database.prepare(
-    "SELECT COUNT(*) AS count FROM cards WHERE enabled = 1",
+    "SELECT COUNT(*) AS count FROM cards WHERE enabled = 1 AND NOT EXISTS (SELECT 1 FROM entry_removals WHERE entry_id = cards.entry_id)",
   ).get() as CountRow;
   const reviewed = database.prepare("SELECT COUNT(*) AS count FROM review_state").get() as CountRow;
 
@@ -514,7 +522,7 @@ function getLocalDayRange(currentTime: Date) {
 }
 
 function buildStudyFilterClause(filters: EntryFilters) {
-  const clauses: string[] = [];
+  const clauses: string[] = ["NOT EXISTS (SELECT 1 FROM entry_removals WHERE entry_id = entries.id)"];
   const parameters: SQLInputValue[] = [];
 
   if (filters.category) {
@@ -645,6 +653,7 @@ const dictionaryEntrySelect = `
     AND override_example.layer = 'override'
     AND override_example.is_primary = 1
   WHERE entries.active = 1
+    AND NOT EXISTS (SELECT 1 FROM entry_removals WHERE entry_id = entries.id)
 `;
 
 function buildEntryFilterClause(search: string, filters: EntryFilters) {
@@ -735,6 +744,7 @@ export function getEntryFilterOptions(database: DatabaseSync) {
     FROM effective_entry_tags AS entry_tags
     JOIN entries ON entries.id = entry_tags.entry_id
     WHERE entries.active = 1
+      AND NOT EXISTS (SELECT 1 FROM entry_removals WHERE entry_id = entries.id)
     ORDER BY tag COLLATE NOCASE
   `).all() as { tag: string }[];
 
@@ -888,7 +898,8 @@ export function recordReview(
   result: ReviewResult,
   reviewedAt = new Date(),
 ) {
-  const card = database.prepare("SELECT id FROM cards WHERE id = ? AND enabled = 1").get(
+  const card = database.prepare(`SELECT id FROM cards WHERE id = ? AND enabled = 1
+    AND NOT EXISTS (SELECT 1 FROM entry_removals WHERE entry_id = cards.entry_id)`).get(
     cardId,
   ) as IdRow | undefined;
 
@@ -1190,6 +1201,7 @@ export function getEntryDetail(database: DatabaseSync, entryId: number): EntryDe
   `).all(entryId) as EntryDetail["history"];
 
   return {
+    removal: (database.prepare(`SELECT kind, target_id AS targetId, removed_at AS removedAt FROM entry_removals WHERE entry_id = ?`).get(entryId) as EntryDetail["removal"]) ?? null,
     base,
     cards: cards.map((card) => ({ ...card, enabled: Boolean(card.enabled) })),
     effective,
@@ -1240,6 +1252,7 @@ export function patchEntry(database: DatabaseSync, entryId: number, patch: Entry
   if (!before) {
     return null;
   }
+  if (before.removal) throw new EntryValidationError("Карточка удалена или объединена. Сначала восстановите её либо откройте итоговую карточку.");
 
   const now = new Date().toISOString();
   const currentOverride = getOverride(database, entryId);
@@ -1381,6 +1394,8 @@ export function createUserEntry(database: DatabaseSync, input: EntryCreate, orig
   `).get(`user:${normalizeUserKey(turkish)}`, turkish, turkish) as IdRow | undefined;
 
   if (exists) {
+    if (getEntryDetail(database, exists.id)?.removal)
+      throw new EntryValidationError(`Это слово ранее удалено или объединено. Откройте карточку №${exists.id} для подробностей.`);
     return getEntryDetail(database, exists.id);
   }
 
@@ -1481,4 +1496,95 @@ function normalizeUserKey(value: string) {
 
 export function closeDatabase(database: DatabaseSync) {
   database.close();
+}
+
+function invalidateEntryUndo(database: DatabaseSync, entryId: number) {
+  database.prepare(`DELETE FROM review_undo WHERE review_log_id IN (
+    SELECT review_log.id FROM review_log JOIN cards ON cards.id = review_log.card_id WHERE cards.entry_id = ?
+  )`).run(entryId);
+}
+
+export function deleteEntry(database: DatabaseSync, entryId: number) {
+  const detail = getEntryDetail(database, entryId);
+  if (!detail) return null;
+  if (detail.removal) return detail;
+  database.exec("BEGIN IMMEDIATE;");
+  try {
+    database.prepare("INSERT INTO entry_removals VALUES (?, 'deleted', NULL, ?)").run(entryId, new Date().toISOString());
+    invalidateEntryUndo(database, entryId);
+    database.exec("COMMIT;");
+  } catch (error) { database.exec("ROLLBACK;"); throw error; }
+  return getEntryDetail(database, entryId);
+}
+
+export function restoreEntry(database: DatabaseSync, entryId: number) {
+  const detail = getEntryDetail(database, entryId);
+  if (!detail) return null;
+  if (detail.removal?.kind === "merged") throw new EntryValidationError("Откройте итоговую карточку после слияния.");
+  database.prepare("DELETE FROM entry_removals WHERE entry_id = ?").run(entryId);
+  return getEntryDetail(database, entryId);
+}
+
+export function getRemovedEntries(database: DatabaseSync) {
+  const ids = database.prepare("SELECT entry_id AS id FROM entry_removals ORDER BY removed_at DESC").all() as IdRow[];
+  return ids.map(({ id }) => getEntryDetail(database, id)!).map(detail => ({ ...detail.effective, removal: detail.removal }));
+}
+
+export function mergeEntries(database: DatabaseSync, sourceId: number, targetId: number) {
+  if (!Number.isSafeInteger(targetId) || sourceId === targetId)
+    throw new EntryValidationError("Выберите другую итоговую карточку.");
+  const source = getEntryDetail(database, sourceId);
+  const target = getEntryDetail(database, targetId);
+  if (!source || !target) return null;
+  if (source.removal || target.removal || target.base.status === "DISABLED")
+    throw new EntryValidationError("Для слияния выберите доступные карточки.");
+  const now = new Date().toISOString();
+  database.exec("BEGIN IMMEDIATE;");
+  try {
+    invalidateEntryUndo(database, sourceId);
+    invalidateEntryUndo(database, targetId);
+    // Keep the chosen entry's primary fields; retain every source and example as a secondary item.
+    for (const [table, columns] of [
+      ["entry_translation_items", "text"], ["entry_example_items", "turkish, russian"],
+    ] as const) {
+      const layers = database.prepare(`SELECT DISTINCT layer FROM ${table} WHERE entry_id = ?`).all(sourceId) as { layer: string }[];
+      for (const { layer } of layers) {
+        const position = database.prepare(`SELECT COALESCE(MAX(position), -1) + 1 AS next FROM ${table} WHERE entry_id = ? AND layer = ?`)
+          .get(targetId, layer) as { next: number };
+        database.prepare(`INSERT INTO ${table} (entry_id, layer, ${columns}, is_primary, position, source_name, source_url, source_license, created_at, updated_at)
+          SELECT ?, layer, ${columns}, 0, ? + ROW_NUMBER() OVER (ORDER BY position) - 1,
+            source_name, source_url, source_license, created_at, ? FROM ${table} WHERE entry_id = ? AND layer = ?`)
+          .run(targetId, Math.max(1, position.next), now, sourceId, layer);
+      }
+    }
+    database.prepare(`INSERT INTO entry_overrides (entry_id, tags_overridden, updated_at) VALUES (?, 1, ?)
+      ON CONFLICT(entry_id) DO UPDATE SET tags_overridden = 1, updated_at = excluded.updated_at`).run(targetId, now);
+    database.prepare("DELETE FROM entry_tags WHERE entry_id = ? AND layer = 'override'").run(targetId);
+    for (const tag of new Set([...target.effective.tags, ...source.effective.tags])) {
+      database.prepare("INSERT INTO entry_tags (entry_id, layer, tag, created_at) VALUES (?, 'override', ?, ?)").run(targetId, tag, now);
+    }
+    for (const card of source.cards) {
+      const destination = target.cards.find(item => item.direction === card.direction);
+      if (!destination) throw new EntryValidationError("У итоговой карточки отсутствует учебное направление.");
+      database.prepare(`INSERT INTO review_state (card_id, due_at, interval_days, ease_factor, repetitions, lapses, first_reviewed_at, last_reviewed_at)
+        SELECT ?, due_at, interval_days, ease_factor, repetitions, lapses, first_reviewed_at, last_reviewed_at
+        FROM review_state WHERE card_id = ?
+        ON CONFLICT(card_id) DO UPDATE SET
+          due_at = MIN(review_state.due_at, excluded.due_at),
+          interval_days = MIN(review_state.interval_days, excluded.interval_days),
+          ease_factor = MIN(review_state.ease_factor, excluded.ease_factor),
+          repetitions = MIN(review_state.repetitions, excluded.repetitions),
+          lapses = MAX(review_state.lapses, excluded.lapses),
+          first_reviewed_at = MIN(review_state.first_reviewed_at, excluded.first_reviewed_at),
+          last_reviewed_at = MAX(review_state.last_reviewed_at, excluded.last_reviewed_at)`)
+        .run(destination.id, card.id);
+      database.prepare("UPDATE review_log SET card_id = ? WHERE card_id = ?").run(destination.id, card.id);
+      database.prepare("DELETE FROM review_state WHERE card_id = ?").run(card.id);
+    }
+    database.prepare(`INSERT INTO entry_change_log (entry_id, field, old_value_json, new_value_json, change_source, changed_at)
+      VALUES (?, 'merge', ?, ?, 'user', ?)`).run(targetId, JSON.stringify(target.effective), JSON.stringify({ sourceId, source: source.effective, history: source.history }), now);
+    database.prepare("INSERT INTO entry_removals VALUES (?, 'merged', ?, ?)").run(sourceId, targetId, now);
+    database.exec("COMMIT;");
+  } catch (error) { database.exec("ROLLBACK;"); throw error; }
+  return getEntryDetail(database, targetId);
 }

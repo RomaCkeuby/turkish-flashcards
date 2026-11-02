@@ -8,9 +8,10 @@
     "start": "node --disable-warning=ExperimentalWarning dist/index.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --disable-warning=ExperimentalWarning --test src/database.test.ts src/onlineDictionary.test.ts src/hosting.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test src/database.test.ts src/onlineDictionary.test.ts src/hosting.test.ts src/entryQuality.test.ts src/publicDeck.test.ts src/auth.test.ts",
     "db:seed": "node --disable-warning=ExperimentalWarning src/seed.ts",
     "db:check": "node --disable-warning=ExperimentalWarning src/check.ts",
-    "updates:build": "node --disable-warning=ExperimentalWarning src/buildUpdatePackage.ts"
+    "updates:build": "node --disable-warning=ExperimentalWarning src/buildUpdatePackage.ts",
+    "decks:build": "node --disable-warning=ExperimentalWarning src/publicDeckBuild.ts"
   }
 }

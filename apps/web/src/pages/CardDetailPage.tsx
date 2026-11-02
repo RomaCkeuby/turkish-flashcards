@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ArrowLeft, Check, RotateCcw, Save } from "lucide-react";
+import { EntryQualityPanel, LocalWordCheck } from "../components/EntryQualityPanel";
+import { EntryManagement } from "../components/EntryManagement";
+import { restoreEntry } from "../api";
 import { applyEntryRefreshSuggestion, fetchEntryDetail, fetchEntryRefreshSuggestion, setEntryStatus,
   updateEntry, type EntryDetail, type EntryRefreshSuggestion, type EntryStatus } from "../api";
 import { buildEntryPatch, emptyDraft, entryDraft, fieldLabels, historyValue, mergeEntryDraft,
@@ -27,6 +30,7 @@ export function CardDetailPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [restoring, setRestoring] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   const acceptDetail = (data: EntryDetail, resetDraft = false) => {
@@ -117,11 +121,23 @@ export function CardDetailPage() {
   if (status === "loading") return <p className="statusMessage" role="status">Загружаем карточку…</p>;
   if (status === "error" || !detail) return <section className="pageStack"><p className="errorMessage" role="alert">Не удалось загрузить карточку.</p><button className="secondaryButton" onClick={() => setRetry(value => value + 1)}><RotateCcw size={17} />Повторить</button><Link to={returnTo}>Вернуться</Link></section>;
   const { effective } = detail;
+  if (detail.removal) return <section className="pageStack">
+    <Link to={returnTo} className="backLink"><ArrowLeft size={17} />В словарь</Link>
+    <h1>{effective.turkish}</h1>
+    <p>{detail.removal.kind === "merged" ? "Карточка объединена с другой." : "Карточка удалена из словаря и занятий. Данные и прогресс сохранены."}</p>
+    {detail.removal.kind === "merged" ? <Link to={`/card/${detail.removal.targetId}`}>Открыть итоговую карточку</Link> :
+      <button className="primaryButton" disabled={restoring} onClick={async () => {
+        setRestoring(true); setMessage("");
+        try { acceptDetail(await restoreEntry(numericEntryId), true); }
+        catch (error) { setMessage(error instanceof Error ? error.message : "Не удалось восстановить карточку."); }
+        finally { setRestoring(false); }
+      }}>Восстановить карточку</button>}
+    <p role="status">{message}</p>
+  </section>;
   const dirty = Object.keys(buildEntryPatch(draft, baseline.current)).length > 0;
   const busy = isSaving || isRefreshing;
   const updateField = (field: keyof EntryDraft, value: string) => { setMessage(""); setDraft(current => ({ ...current, [field]: value })); };
-  const hasOverrideExample = detail.examples.some(example => example.layer === "override");
-  const examples = detail.examples.filter(example => example.layer === (hasOverrideExample ? "override" : "base") && (example.turkish || example.russian));
+  const examples = detail.examples.filter(example => example.turkish || example.russian);
 
   return <section className="pageStack cardDetailPage">
     <Link className="backLink" to={returnTo}><ArrowLeft size={17} />{returnTo.startsWith("/study") ? "К той же карточке в занятии" : "В словарь"}</Link>
@@ -138,14 +154,22 @@ export function CardDetailPage() {
         <label><span>Пример на турецком</span><textarea name="exampleTurkish" lang="tr" rows={3} value={draft.exampleTurkish} disabled={busy} onChange={e => updateField("exampleTurkish", e.target.value)} /></label>
         <label><span>Перевод примера</span><textarea name="exampleRussian" rows={3} value={draft.exampleRussian} disabled={busy} onChange={e => updateField("exampleRussian", e.target.value)} /></label>
       </div>
+      <LocalWordCheck word={draft} entryId={effective.id} />
       <p className="statusMessage">Черновик сохраняется в этой вкладке. Изменение статуса его не удалит.</p>
       <div className="editorSaveBar"><div className="updateActions"><button className="primaryButton" disabled={busy || !dirty} type="submit"><Save size={17} />{isSaving ? "Сохраняем…" : "Сохранить"}</button><button className="secondaryButton" disabled={busy || !dirty} onClick={() => { setDraft(baseline.current); setMessage("Правки сброшены."); }} type="button">Сбросить правки</button></div><span className="saveShortcut">Ctrl/Cmd + S</span></div>
       <p className="statusMessage" role="status" aria-live="polite">{message || (dirty ? "Правки ещё не применены к карточке." : "")}</p>
     </form>
 
+    <EntryQualityPanel key={`${effective.id}:${effective.updatedAt}`} entryId={effective.id} dirty={dirty} disabled={busy} onSuggestion={patch => {
+      setDraft(current => ({ ...current, ...patch, tags: current.tags }));
+      setMessage("Предложение перенесено в черновик. Проверьте слово, перевод и соответствие примера перед сохранением.");
+      document.getElementById("edit")?.scrollIntoView({ block: "start" });
+    }} />
+    <EntryManagement detail={detail} dirty={dirty} disabled={busy} onChange={data => acceptDetail(data, true)} />
+
     <section className="cardSection emptyPanel"><h2>Учебный прогресс</h2><div className="detailsGrid"><FieldRow label="Успешных повторений подряд (оба направления)" value={String(detail.review.repetitions)} /><FieldRow label="Ближайшее повторение" value={formatDate(detail.review.dueAt)} /></div></section>
 
-    <details className="cardDisclosure"><summary>Предложения из локальных словарей</summary><div className="disclosureBody"><p className="statusMessage">Сравнение с подборкой Kaikki и примерами Tatoeba, уже сохранёнными в приложении. Интернет-поиск находится в словаре.</p><button className="secondaryButton" disabled={busy} onClick={findRefreshSuggestion}>Проверить локальные словари</button>
+    <details className="cardDisclosure"><summary>Предложения из локальных словарей</summary><div className="disclosureBody"><p className="statusMessage">Сравнение с подборкой Kaikki и примерами Tatoeba, уже сохранёнными в приложении. Интернет-сверка доступна выше в разделе «Перепроверка перевода».</p><button className="secondaryButton" disabled={busy} onClick={findRefreshSuggestion}>Проверить локальные словари</button>
       {refreshSuggestion && <div className="refreshSuggestionPanel"><strong>{refreshSuggestion.sourceName}</strong>{refreshSuggestion.changes.length ? <><div className="itemList">{refreshSuggestion.changes.map(change => <div className="historyItem" key={change.field}><strong>{fieldLabels[change.field] ?? change.field}</strong><small>{change.from || "не задано"} → {change.to}</small></div>)}</div><button className="secondaryButton" disabled={busy} onClick={applyRefreshSuggestion}><Check size={17} />Применить предложение</button></> : <p className="statusMessage">Отличий нет.</p>}</div>}
     </div></details>
 

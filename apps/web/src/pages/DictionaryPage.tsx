@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { LocalWordCheck } from "../components/EntryQualityPanel";
+import { RemovedEntries } from "../components/RemovedEntries";
 import { Download, Plus, SlidersHorizontal } from "lucide-react";
 import { Modal } from "../components/Modal";
 import { CardInspector } from "../components/CardInspector";
@@ -8,6 +10,7 @@ import { OnlineWordSearch } from "./OnlineWordSearch";
 
 import {
   applyDictionaryImport,
+  auditDictionary, type DictionaryAudit,
   createEntry,
   fetchEntries,
   fetchEntryFilters,
@@ -64,6 +67,12 @@ export function DictionaryPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [status, setStatus] = useState<"error" | "loading" | "ready">("loading");
   const [total, setTotal] = useState(0);
+  const [audit, setAudit] = useState<DictionaryAudit | null>(null);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditBusy, setAuditBusy] = useState(false);
+  const [auditError, setAuditError] = useState("");
+  const [removedOpen, setRemovedOpen] = useState(false);
+  const [createWord, setCreateWord] = useState({ turkish: "", russian: "" });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -152,8 +161,8 @@ export function DictionaryPage() {
       });
       setIsCreateOpen(false);
       navigate(`/card/${detail.effective.id}`);
-    } catch {
-      setCreateMessage("Не удалось добавить карточку.");
+    } catch (error) {
+      setCreateMessage(error instanceof Error ? error.message : "Не удалось добавить карточку.");
     } finally {
       setIsCreating(false);
     }
@@ -286,7 +295,7 @@ export function DictionaryPage() {
           {filterCount > 0 && <button className="textButton" type="button" onClick={() => { setSelectedId(null); setParams(search ? { search } : {}, { replace: true }); }}>Сбросить фильтры</button>}
           </div>
         </details>
-        <button className="primaryButton toolbarAction" aria-label="Добавить слово" title="Добавить слово" onClick={() => setIsCreateOpen(true)} type="button">
+        <button className="primaryButton toolbarAction" aria-label="Добавить слово" title="Добавить слово" onClick={() => { setCreateWord({ turkish: "", russian: "" }); setCreateMessage(""); setIsCreateOpen(true); }} type="button">
           <Plus size={19} /><span className="buttonText">Добавить слово</span>
         </button>
         <button
@@ -305,6 +314,33 @@ export function DictionaryPage() {
         </button>
       </div>
 
+      <div className="updateActions"><button className="secondaryButton" type="button" onClick={async () => {
+        setAuditOpen(true); setAuditBusy(true); setAudit(null); setAuditError("");
+        try { setAudit(await auditDictionary()); }
+        catch { setAuditError("Не удалось проверить словарь."); }
+        finally { setAuditBusy(false); }
+      }}>Проверить точность и совпадения</button>
+      <button className="secondaryButton" type="button" onClick={() => setRemovedOpen(true)}>Удалённые и объединённые</button></div>
+      {removedOpen && <Modal title="Удалённые и объединённые карточки" onClose={() => setRemovedOpen(false)}>
+        <RemovedEntries onChange={() => setRefreshTick(value => value + 1)} />
+      </Modal>}
+      {auditOpen && <Modal title="Проверка коллекции" busy={auditBusy} onClose={() => setAuditOpen(false)}>
+        <p className="statusMessage">Совпадение значений — повод для проверки, включая синонимы. Откройте карточку для интернет-сверки, правки, удаления или слияния.</p>
+        {auditBusy && <p role="status">Проверяем весь локальный словарь…</p>}
+        {auditError && <p role="alert" className="errorMessage">{auditError}</p>}
+        {audit && <div className="itemList">
+          <p>Проверено слов: {audit.total}. Совпадений значений: {audit.groups.length}. Совпадений слов: {audit.duplicateWords.length}.</p>
+          {[...audit.duplicateWords, ...audit.groups].map((group, index) => <div className="sourceItem" key={index}>
+            <strong>{group.key}</strong>
+            {group.entries.map(entry => <p key={entry.id}><Link to={`/card/${entry.id}`}>{entry.turkish}</Link> — {entry.russian} ({entry.partOfSpeech})</p>)}
+          </div>)}
+          <details><summary>Примеры требуют проверки: {audit.exampleWarnings.length}</summary>
+            <p className="statusMessage">Простое сопоставление слов может не распознать склонения, спряжения и синонимы. Эти предупреждения не доказывают ошибку.</p>
+            {audit.exampleWarnings.map(entry => <div className="sourceItem" key={entry.id}><Link to={`/card/${entry.id}`}>{entry.turkish} — {entry.russian}</Link><p>{entry.exampleTurkish}</p><p>{entry.exampleRussian}</p></div>)}
+          </details>
+        </div>}
+      </Modal>}
+
       {importMessage && !isImportOpen && <p className="statusMessage">{importMessage}</p>}
 
       {isCreateOpen && (
@@ -313,11 +349,11 @@ export function DictionaryPage() {
               <div className="quickCreateGrid">
                 <label>
                   <span>Турецкое слово</span>
-                  <input name="turkish" required />
+                  <input name="turkish" required onChange={event => setCreateWord(current => ({ ...current, turkish: event.target.value }))} />
                 </label>
                 <label>
                   <span>Русский перевод</span>
-                  <input name="russian" required />
+                  <input name="russian" required onChange={event => setCreateWord(current => ({ ...current, russian: event.target.value }))} />
                 </label>
                 <label>
                   <span>Часть речи</span>
@@ -340,6 +376,7 @@ export function DictionaryPage() {
                   <input name="exampleRussian" />
                 </label>
               </div>
+              <LocalWordCheck word={createWord} />
               <button className="primaryButton" disabled={isCreating} type="submit">
                 Добавить
               </button>
