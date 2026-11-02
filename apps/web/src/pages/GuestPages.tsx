@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Route, Routes, useParams, useSearchParams } from "react-router-dom";
-import { Check, RotateCcw, X } from "lucide-react";
+import { RotateCcw } from "lucide-react";
+import { StudyReviewActions } from "../components/StudyReviewActions";
+import { StudyFilterFields } from "../components/StudyFilterFields";
+import { StudyFilters } from "../components/StudyFilters";
+import { TwoPositionSwitch } from "../components/TwoPositionSwitch";
+import { StudyStats } from "../components/StudyStats";
+import { StudyAnswer } from "../components/StudyAnswer";
+import { StudyPrompt } from "../components/StudyPrompt";
 import { createGuestDeck, filterGuestEntries, getGuestFilterOptions } from "../guestDeck";
 import { DeckStatus, usePublicDeck } from "../publicDeck";
 import type { PublicCardEntry } from "../publicDeckTypes";
@@ -17,12 +24,12 @@ function Sources({ entry }: { entry: PublicCardEntry }) {
   </li>)}</ul>;
 }
 
-function Example({ entry }: { entry: PublicCardEntry }) {
+function Example({ entry, showSources = true }: { entry: PublicCardEntry; showSources?: boolean }) {
   return entry.exampleTurkish || entry.exampleRussian ? <div className="cardExample">
     {entry.exampleTurkish && <p lang="tr">{entry.exampleTurkish}</p>}
     {entry.exampleRussian && <p lang="ru">{entry.exampleRussian}</p>}
-    <Sources entry={entry} />
-  </div> : <Sources entry={entry} />;
+    {showSources && <Sources entry={entry} />}
+  </div> : showSources ? <Sources entry={entry} /> : null;
 }
 
 function GuestDashboard() {
@@ -45,11 +52,7 @@ function GuestDashboard() {
 
 function GuestFilters({ entries, params, change }: { entries: PublicCardEntry[]; params: URLSearchParams; change: (name: string, value: string) => void }) {
   const options = useMemo(() => getGuestFilterOptions(entries), [entries]);
-  return <div className="guestFilters">
-    <label className="statusFilter"><span>Категория</span><select value={params.get("category") ?? ""} onChange={e => change("category", e.target.value)}><option value="">Все</option>{options.categories.map(value => <option key={value}>{value}</option>)}</select></label>
-    <label className="statusFilter"><span>Часть речи</span><select value={params.get("partOfSpeech") ?? ""} onChange={e => change("partOfSpeech", e.target.value)}><option value="">Все</option>{options.partsOfSpeech.map(value => <option key={value}>{value}</option>)}</select></label>
-    <label className="statusFilter"><span>Тег</span><select value={params.get("tag") ?? ""} onChange={e => change("tag", e.target.value)}><option value="">Все</option>{options.tags.map(value => <option key={value}>{value}</option>)}</select></label>
-  </div>;
+  return <div className="guestFilters"><StudyFilterFields options={options} values={{ category: params.get("category") ?? "", partOfSpeech: params.get("partOfSpeech") ?? "", tag: params.get("tag") ?? "" }} onChange={change} /></div>;
 }
 
 function useGuestParams() {
@@ -131,31 +134,42 @@ function GuestStudyRound({ entries, direction, category, partOfSpeech, tag, roun
     document.addEventListener("keydown", keydown);
     return () => document.removeEventListener("keydown", keydown);
   });
-  return <>
-    {!card ? <div className="donePanel guestRoundDone"><h2>{deck.length ? "Проход завершён" : "Карточек по этим фильтрам нет"}</h2><p className="statusMessage">{deck.length ? "Можно перемешать колоду и начать новый проход." : "Выберите другую категорию, часть речи или тег."}</p></div> : <div className="studyPreview"><div className="studyCardLayout">
-      <div className="cardPromptPane"><p className="cardLabel">{card.entry.category}</p><p className="cardPrompt" lang={direction === "tr-ru" ? "tr" : "ru"}>{direction === "tr-ru" ? card.entry.turkish : card.entry.russian}</p><p className="cardPartOfSpeech">{card.entry.partOfSpeech}</p></div>
-      <div className={`cardAnswerPane${revealed ? " isRevealed" : ""}`}>{revealed ? <div className="cardAnswer"><div className="answerHeader"><span>Перевод</span><Link to={cardPath(card.entry)}>Подробнее</Link></div><strong className="answerTranslation">{direction === "tr-ru" ? card.entry.russian : card.entry.turkish}</strong><Example entry={card.entry} /></div> : <p className="answerPlaceholder">Перевод появится после нажатия кнопки</p>}</div>
+  return <div className="studyRound">
+    {!card ? <div className="studyPreview donePanel guestRoundDone"><h2>{deck.length ? "Проход завершён" : "Карточек по этим фильтрам нет"}</h2><p className="statusMessage">{deck.length ? "Можно перемешать колоду и начать новый проход." : "Выберите другую категорию, часть речи или тег."}</p></div> : <div className="studyPreview"><div className="studyCardLayout">
+      <StudyPrompt><p className="cardLabel">{card.entry.category}</p><p className={`cardPrompt${(direction === "tr-ru" ? card.entry.turkish : card.entry.russian).length > 28 ? " longPrompt" : ""}`} lang={direction === "tr-ru" ? "tr" : "ru"}>{direction === "tr-ru" ? card.entry.turkish : card.entry.russian}</p><p className="cardPartOfSpeech">{card.entry.partOfSpeech}</p></StudyPrompt>
+      <div className={`cardAnswerPane${revealed ? " isRevealed" : ""}`}>{revealed ? <StudyAnswer><div className="answerHeader"><span>Перевод</span><Link to={cardPath(card.entry)}>Подробнее</Link></div><strong className="answerTranslation" lang={direction === "tr-ru" ? "ru" : "tr"}>{direction === "tr-ru" ? card.entry.russian : card.entry.turkish}</strong><Example entry={card.entry} showSources={false} /></StudyAnswer> : <p className="answerPlaceholder">Перевод появится после нажатия кнопки</p>}</div>
     </div></div>}
-    <div className="queueStrip" aria-label="Текущая тренировка"><div><span>Пройдено</span><strong>{index} / {deck.length}</strong></div><div><span>Верно</span><strong>{correct}</strong></div><div><span>Точность</span><strong>{results.length ? `${Math.round(correct / results.length * 100)}%` : "—"}</strong></div></div>
-    <p className="statusMessage">Счётчики только за этот проход. Ответы не записываются в аккаунт.</p>
-    <div className="reviewActions">{card && (!revealed ? <button className="primaryButton revealButton" onClick={() => setRevealed(true)}>Показать перевод</button> : <><button className="incorrectButton" onClick={() => rate(false)}><X size={20} />Неверно</button><button className="correctButton" onClick={() => rate(true)}><Check size={20} />Верно</button></>)}</div>
-    <button className="textButton" disabled={!index} onClick={undo}>Отменить последнюю оценку в тренировке</button>
+    <StudyStats>
+      <div className="queueStrip" aria-label="Текущая тренировка"><div><span>Пройдено</span><strong>{index} / {deck.length}</strong></div><div><span>Верно</span><strong>{correct}</strong></div><div><span>Точность</span><strong>{results.length ? `${Math.round(correct / results.length * 100)}%` : "—"}</strong></div></div>
+    </StudyStats>
     <p className="shortcutHint"><kbd>Пробел</kbd> перевод · <kbd>1</kbd> неверно · <kbd>2</kbd> верно · <kbd>Ctrl/Cmd Z</kbd> отмена</p>
-  </>;
+    <StudyReviewActions revealed={revealed} ready={Boolean(card)} canUndo={index > 0} onReveal={() => setRevealed(true)} onRate={rate} onUndo={undo} />
+  </div>;
 }
 
 function GuestStudy() {
   const { data } = usePublicDeck();
   const { params, change } = useGuestParams();
   const [round, setRound] = useState(0);
+  const [, setParams] = useSearchParams();
   const direction: Direction = params.get("direction") === "ru-tr" ? "ru-tr" : "tr-ru";
   const category = params.get("category") ?? "";
   const partOfSpeech = params.get("partOfSpeech") ?? "";
   const tag = params.get("tag") ?? "";
   const roundKey = JSON.stringify([direction, category, partOfSpeech, tag, round]);
-  return <section className="pageStack guestStudy"><header><h1>Свободная тренировка</h1><p className="lead">Перемешанная колода · {direction === "tr-ru" ? "TR → RU" : "RU → TR"}</p></header>
-    <div className="studyControls"><div className="segmentedControl" aria-label="Направление перевода"><button aria-pressed={direction === "tr-ru"} onClick={() => change("direction", "tr-ru")}>TR → RU</button><button aria-pressed={direction === "ru-tr"} onClick={() => change("direction", "ru-tr")}>RU → TR</button></div><button className="secondaryButton" onClick={() => setRound(value => value + 1)}><RotateCcw size={16} />Новый проход</button></div>
-    {!data ? <DeckStatus /> : <><GuestFilters entries={data.entries} params={params} change={change} /><GuestStudyRound key={roundKey} entries={data.entries} direction={direction} category={category} partOfSpeech={partOfSpeech} tag={tag} round={round} /></>}
+  const filterCount = [category, partOfSpeech, tag].filter(Boolean).length;
+  return <section className="pageStack studyPage guestStudy"><header className="studyToolbar"><h1>Учёба</h1>
+    <div className="studyControls"><TwoPositionSwitch label="Направление перевода: RU → TR" left="TR → RU" right="RU → TR" checked={direction === "ru-tr"} onChange={checked => change("direction", checked ? "ru-tr" : "tr-ru")} />
+      <div className="studyTools">
+        {data && <StudyFilters count={filterCount}>
+          <button className="secondaryButton restartRoundButton" type="button" onClick={() => setRound(value => value + 1)}><RotateCcw size={17} />Новый проход</button>
+          <GuestFilters entries={data.entries} params={params} change={change} />
+          {filterCount > 0 && <button className="textButton" type="button" onClick={() => setParams({ direction }, { replace: true })}>Сбросить фильтры</button>}
+        </StudyFilters>}
+      </div>
+    </div>
+    </header>
+    {!data ? <div className="studyPreview"><DeckStatus /></div> : <GuestStudyRound key={roundKey} entries={data.entries} direction={direction} category={category} partOfSpeech={partOfSpeech} tag={tag} round={round} />}
   </section>;
 }
 

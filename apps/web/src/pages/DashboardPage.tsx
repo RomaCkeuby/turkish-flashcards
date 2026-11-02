@@ -21,6 +21,7 @@ const emptyStats: Stats = {
 };
 
 export function DashboardPage() {
+  const [attempt, setAttempt] = useState(0);
   const [stats, setStats] = useState(emptyStats);
   const [status, setStatus] = useState<"error" | "loading" | "ready">("loading");
   const reviewDirection = stats.directions?.["tr-ru"].due ? "tr-ru" : "ru-tr";
@@ -28,6 +29,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    setStatus("loading");
 
     fetchStats(controller.signal)
       .then((data) => {
@@ -41,7 +43,9 @@ export function DashboardPage() {
       });
 
     return () => controller.abort();
-  }, []);
+  }, [attempt]);
+
+  const metric = (value: number) => status === "ready" ? value : "—";
 
   return (
     <section className="pageStack">
@@ -49,7 +53,7 @@ export function DashboardPage() {
         <p className="eyebrow">Dashboard</p>
         <h1>Главная</h1>
         <p className="lead">
-          Локальная коллекция готова к занятиям на турецком и русском языках.
+          {status === "ready" ? "Личная коллекция для занятий на турецком и русском языках." : "Личная коллекция на сервере ПК."}
         </p>
       </header>
 
@@ -71,37 +75,37 @@ export function DashboardPage() {
       <div className="placeholderGrid" aria-label="Показатели коллекции">
         <div className="metric">
           <span>Слов</span>
-          <strong>{stats.entries}</strong>
+          <strong>{metric(stats.entries)}</strong>
         </div>
         <div className="metric">
           <span>Карточек</span>
-          <strong>{stats.cards}</strong>
+          <strong>{metric(stats.cards)}</strong>
         </div>
         <div className="metric">
           <span>Изучено</span>
-          <strong>{stats.reviewed}</strong>
+          <strong>{metric(stats.reviewed)}</strong>
         </div>
       </div>
 
       <div className="placeholderGrid" aria-label="Учебная очередь">
         <div className="metric">
           <span>К повторению</span>
-          <strong>{stats.queue.due}</strong>
+          <strong>{metric(stats.queue.due)}</strong>
         </div>
         <div className="metric">
           <span>Новых сегодня</span>
-          <strong>{stats.queue.newUsedToday}</strong>
+          <strong>{metric(stats.queue.newUsedToday)}</strong>
         </div>
         <div className="metric">
           <span>Ответов сегодня</span>
-          <strong>{stats.queue.reviewedToday}</strong>
+          <strong>{metric(stats.queue.reviewedToday)}</strong>
         </div>
       </div>
 
       <div className="studySummary" aria-label="Статистика дня">
         <div>
           <span>Верных ответов</span>
-          <strong>{stats.queue.correctToday}</strong>
+          <strong>{metric(stats.queue.correctToday)}</strong>
         </div>
         <div>
           <span>Точность</span>
@@ -111,15 +115,13 @@ export function DashboardPage() {
         </div>
         <div>
           <span>Осталось новых в базе</span>
-          <strong>{stats.queue.newTotal}</strong>
+          <strong>{metric(stats.queue.newTotal)}</strong>
         </div>
       </div>
 
       {status === "loading" && <p className="statusMessage">Читаем локальную базу…</p>}
       {status === "error" && (
-        <p className="statusMessage errorMessage">
-          Сервер базы данных недоступен. Запустите приложение командой pnpm dev.
-        </p>
+        <div className="serverConnectionForm" role="alert"><p className="statusMessage errorMessage">Не удалось подключиться к серверу. Проверьте, что ПК включён и открыт адрес сервера. Коллекция пока не загружена.</p><button className="secondaryButton" type="button" onClick={() => setAttempt(value => value + 1)}><RotateCcw size={17} />Повторить подключение</button></div>
       )}
     </section>
   );

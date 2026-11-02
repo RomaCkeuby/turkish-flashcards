@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Check, Pencil, RotateCcw, SlidersHorizontal, Undo2, X } from "lucide-react";
+import { Pencil, RotateCcw } from "lucide-react";
+import { StudyReviewActions } from "../components/StudyReviewActions";
+import { StudyFilterFields } from "../components/StudyFilterFields";
+import { StudyFilters } from "../components/StudyFilters";
+import { TwoPositionSwitch } from "../components/TwoPositionSwitch";
+import { StudyStats } from "../components/StudyStats";
+import { StudyAnswer } from "../components/StudyAnswer";
+import { StudyPrompt } from "../components/StudyPrompt";
 import { fetchEntryFilters, fetchNextCard, submitReview, undoLastReview, type CardDirection,
   type EntryFilterOptions, type QueueStats, type ReviewResult, type StudyCard, type StudyMode } from "../api";
 import { readStudySession, saveStudySession, studyKey, studyShortcut, type StudyUndo } from "../studySession";
@@ -22,7 +29,7 @@ export function StudyPage() {
   const tag = params.get("tag") ?? "";
   const query = params.toString();
   const key = studyKey(params);
-  const filterCount = [category, partOfSpeech, tag].filter(Boolean).length;
+  const filterCount = [category, partOfSpeech, tag].filter(Boolean).length + (mode === "all" ? 0 : 1);
   const [card, setCard] = useState<StudyCard | null>(null);
   const [filterOptions, setFilterOptions] = useState<EntryFilterOptions>({ categories: [], partsOfSpeech: [], tags: [] });
   const [queue, setQueue] = useState<QueueStats>(emptyQueue);
@@ -137,47 +144,37 @@ export function StudyPage() {
   const prompt = (direction === "tr-ru" ? card?.turkish : card?.russian) ?? "";
   const answer = direction === "tr-ru" ? card?.russian : card?.turkish;
   const returnTo = `/study${query ? `?${query}` : ""}`;
-  const modeLabel = mode === "review" ? "Повторение" : mode === "new" ? "Новые слова" : "Все карточки";
 
   return <section className="pageStack studyPage">
-    <header className="pageHeading"><h1>Учёба</h1><span className="pageSubtitle">{modeLabel} · {direction === "tr-ru" ? "TR → RU" : "RU → TR"}</span></header>
+    <header className="studyToolbar"><h1>Учёба</h1>
     <div className="studyControls">
-      <div className="segmentedControl" aria-label="Направление перевода">
-        <button aria-pressed={direction === "tr-ru"} disabled={isSubmitting} onClick={() => change("direction", "tr-ru")} type="button">TR → RU</button>
-        <button aria-pressed={direction === "ru-tr"} disabled={isSubmitting} onClick={() => change("direction", "ru-tr")} type="button">RU → TR</button>
-      </div>
+      <TwoPositionSwitch label="Направление перевода: RU → TR" left="TR → RU" right="RU → TR" checked={direction === "ru-tr"} disabled={isSubmitting} onChange={checked => change("direction", checked ? "ru-tr" : "tr-ru")} />
       <div className="studyTools">
-        <button className="secondaryButton undoReviewButton" aria-label="Отменить последнюю оценку" disabled={!undo || isSubmitting || status === "loading"} onClick={() => void undoRating()} title="Отменить последнюю оценку (Ctrl/Cmd + Z)"><Undo2 size={17} /><span>Отменить оценку</span></button>
-        <details className="filterDisclosure studyFilterDisclosure">
-          <summary><SlidersHorizontal size={17} />Фильтры{filterCount > 0 && <span className="filterCount">{filterCount}</span>}</summary>
-          <div className="studyFilters">
+        <StudyFilters count={filterCount}>
             <label className="statusFilter"><span>Режим занятия</span><select value={mode} disabled={isSubmitting} onChange={e => change("mode", e.target.value)}><option value="all">Все карточки</option><option value="review">Только повторение</option><option value="new">Только новые</option></select></label>
-            <label className="statusFilter"><span>Категория</span><select value={category} disabled={isSubmitting} onChange={e => change("category", e.target.value)}><option value="">Все</option>{filterOptions.categories.map(value => <option key={value}>{value}</option>)}</select></label>
-            <label className="statusFilter"><span>Часть речи</span><select value={partOfSpeech} disabled={isSubmitting} onChange={e => change("partOfSpeech", e.target.value)}><option value="">Все</option>{filterOptions.partsOfSpeech.map(value => <option key={value}>{value}</option>)}</select></label>
-            <label className="statusFilter"><span>Тег</span><select value={tag} disabled={isSubmitting} onChange={e => change("tag", e.target.value)}><option value="">Все</option>{filterOptions.tags.map(value => <option key={value}>{value}</option>)}</select></label>
-            {filterCount > 0 && <button className="textButton" type="button" disabled={isSubmitting} onClick={() => { setFeedback(""); setParams({ direction, mode }, { replace: true }); }}>Сбросить фильтры</button>}
-          </div>
-        </details>
+            <StudyFilterFields options={filterOptions} values={{ category, partOfSpeech, tag }} onChange={change} disabled={isSubmitting} />
+            {filterCount > 0 && <button className="textButton" type="button" disabled={isSubmitting} onClick={() => { setFeedback(""); setParams({ direction }, { replace: true }); }}>Сбросить фильтры</button>}
+        </StudyFilters>
       </div>
     </div>
+    </header>
     <div className="feedbackSlot" aria-live="polite">{feedback}</div>
     <div className="studyPreview" aria-busy={status === "loading"}>
       {status === "loading" && <p className="statusMessage" role="status">Выбираем карточку…</p>}
       {status === "error" && <div className="donePanel"><p className="errorMessage" role="alert">Не удалось загрузить карточку или сохранить ответ.</p><button className="secondaryButton" onClick={() => void loadCard()}><RotateCcw size={16} />Повторить</button></div>}
       {status === "done" && <div className="donePanel"><h2>{mode === "review" ? "Сейчас повторять нечего" : mode === "new" ? "Новых карточек нет" : "Очередь пуста"}</h2><p className="statusMessage">{filterCount > 0 ? "По выбранным фильтрам нет доступных карточек." : "Карточки для повторения появятся, когда подойдёт их время."}</p><div className="updateActions"><button className="secondaryButton" onClick={() => void loadCard()}><RotateCcw size={16} />Проверить снова</button>{mode !== "all" && <button className="secondaryButton" onClick={() => change("mode", "all")}>Все карточки</button>}</div></div>}
       {status === "ready" && card && <div className="studyCardLayout">
-        <div className="cardPromptPane"><p className="cardLabel">{card.category}</p><p className={`cardPrompt${prompt.length > 28 ? " longPrompt" : ""}`} lang={direction === "tr-ru" ? "tr" : "ru"}>{prompt}</p><p className="cardPartOfSpeech">{card.partOfSpeech}</p></div>
+        <StudyPrompt><p className="cardLabel">{card.category}</p><p className={`cardPrompt${prompt.length > 28 ? " longPrompt" : ""}`} lang={direction === "tr-ru" ? "tr" : "ru"}>{prompt}</p><p className="cardPartOfSpeech">{card.partOfSpeech}</p></StudyPrompt>
         <div className={`cardAnswerPane${revealed ? " isRevealed" : ""}`}>
-          {revealed ? <div className="cardAnswer"><div className="answerHeader"><span>Перевод</span><Link className="editHintButton" aria-label="Редактировать эту карточку" title="Редактировать эту карточку" to={`/card/${card.entryId}#edit`} state={{ returnTo }}><Pencil size={19} /></Link></div>
+          {revealed ? <StudyAnswer><div className="answerHeader"><span>Перевод</span><Link className="editHintButton" aria-label="Редактировать эту карточку" title="Редактировать эту карточку" to={`/card/${card.entryId}#edit`} state={{ returnTo }}><Pencil size={19} /></Link></div>
             <strong className="answerTranslation" lang={direction === "tr-ru" ? "ru" : "tr"}>{answer}</strong>
             {card.exampleTurkish && card.exampleRussian && <div className="cardExample"><p lang="tr">{highlightTerm(card.exampleTurkish, card.turkish)}</p><p>{card.exampleRussian}</p>{card.exampleSourceUrl && <a href={card.exampleSourceUrl} rel="noreferrer" target="_blank">{card.exampleSource || "Источник примера"}</a>}</div>}
-          </div> : <p className="answerPlaceholder">Перевод появится после нажатия кнопки</p>}
+          </StudyAnswer> : <p className="answerPlaceholder">Перевод появится после нажатия кнопки</p>}
         </div>
       </div>}
     </div>
-    <div className="studyFooter"><div className="queueStrip" aria-label="Состояние очереди"><div><span>Сегодня</span><strong>{queue.reviewedToday}</strong></div><div><span>Повторы</span><strong>{queue.due}</strong></div><div><span>Новые</span><strong>{queue.newAvailable}</strong></div><div><span>Точность</span><strong>{queue.accuracyToday === null ? "—" : `${queue.accuracyToday}%`}</strong></div></div><p className="shortcutHint"><kbd>Пробел</kbd> перевод · <kbd>1</kbd> неверно · <kbd>2</kbd> верно · <kbd>Ctrl/Cmd Z</kbd> отмена</p></div>
-    <div className="reviewActions" aria-label="Оценка ответа">
-      {!revealed ? <button className="primaryButton revealButton" disabled={status !== "ready" || isSubmitting} onClick={() => setRevealed(true)} type="button">Показать перевод</button> : <><button className="incorrectButton" disabled={isSubmitting || status !== "ready"} onClick={() => void rateCard("incorrect")} type="button"><X size={20} />Неверно</button><button className="correctButton" disabled={isSubmitting || status !== "ready"} onClick={() => void rateCard("correct")} type="button"><Check size={20} />Верно</button></>}
-    </div>
+    <StudyStats><div className="queueStrip" aria-label="Состояние очереди"><div><span>Сегодня</span><strong>{queue.reviewedToday}</strong></div><div><span>Повторы</span><strong>{queue.due}</strong></div><div><span>Новые</span><strong>{queue.newAvailable}</strong></div><div><span>Точность</span><strong>{queue.accuracyToday === null ? "—" : `${queue.accuracyToday}%`}</strong></div></div></StudyStats>
+    <p className="shortcutHint"><kbd>Пробел</kbd> перевод · <kbd>1</kbd> неверно · <kbd>2</kbd> верно · <kbd>Ctrl/Cmd Z</kbd> отмена</p>
+    <StudyReviewActions revealed={revealed} ready={status === "ready"} busy={isSubmitting} canUndo={Boolean(undo) && status !== "loading"} onReveal={() => setRevealed(true)} onRate={correct => void rateCard(correct ? "correct" : "incorrect")} onUndo={() => void undoRating()} />
   </section>;
 }

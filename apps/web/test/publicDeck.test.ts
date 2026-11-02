@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { initialAppMode } from "../src/appMode.ts";
+import { serverSiteUrl } from "../src/serverSite.ts";
 import { loadPublicDeck, parsePublicEntries, parsePublicManifest } from "../src/publicDeckData.ts";
 
 const entry = { key: "source:merhaba", turkish: "merhaba", russian: "привет", category: "Основы", partOfSpeech: "междометие", tags: [], exampleTurkish: "Merhaba!", exampleRussian: "Привет!", sources: [{ name: "Source", url: "https://example.org/word", license: "CC BY", purpose: "entry" }] };
@@ -13,6 +14,20 @@ const manifest = { schemaVersion: 1, version: "test-v1", recordCount: 1, file: `
 test("static site starts as guest and existing local build retains server mode", () => {
   assert.equal(initialAppMode(true), "guest");
   assert.equal(initialAppMode(false), "server");
+});
+
+test("server transition opens its own origin and preserves the study direction", () => {
+  assert.equal(serverSiteUrl(" https://my-server.example/ ", "/study?direction=ru-tr&category=Еда"), "https://my-server.example/study?direction=ru-tr&category=%D0%95%D0%B4%D0%B0");
+  assert.equal(serverSiteUrl("http://localhost:3002"), "http://localhost:3002/");
+  for (const route of ["//other.example", "/\\other.example", "https://other.example"]) {
+    assert.equal(serverSiteUrl("https://my-server.example", route), "https://my-server.example/");
+  }
+});
+
+test("server transition rejects Pages, credentials, paths and unsupported protocols", () => {
+  for (const address of ["https://romackeuby.github.io", "https://server.example/path", "https://server.example/#/", "https://user:pass@server.example", "javascript:alert(1)", "http://server.example", "invalid"]) {
+    assert.throws(() => serverSiteUrl(address));
+  }
 });
 
 test("public loader respects repository base path and only requests public resources", async () => {
