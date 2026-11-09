@@ -14,6 +14,7 @@ const CardDetailPage = lazy(() => import("./pages/CardDetailPage").then(module =
 const DictionaryPage = lazy(() => import("./pages/DictionaryPage").then(module => ({ default: module.DictionaryPage })));
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then(module => ({ default: module.SettingsPage })));
 const StudyPage = lazy(() => import("./pages/StudyPage").then(module => ({ default: module.StudyPage })));
+const CloudAccount = lazy(() => import("./cloud/CloudAccount").then(module => ({ default: module.CloudAccount })));
 
 const navItems = [
   { to: "/", label: "Главная", icon: House, end: true },
@@ -28,9 +29,10 @@ export function App() {
   const isStudy = /^\/study\/?$/.test(location.pathname);
   const [serverConnectionOpen, setServerConnectionOpen] = useState(false);
   const [statsHost, setStatsHost] = useState<HTMLDivElement | null>(null);
-  const [mode, setMode] = useState<AppMode>(() => initialAppMode(import.meta.env.VITE_STATIC_SITE === "1"));
+  const cloudBuild = import.meta.env.VITE_APP_MODE === "cloud";
+  const [mode, setMode] = useState<AppMode>(() => initialAppMode(import.meta.env.VITE_STATIC_SITE === "1", import.meta.env.VITE_APP_MODE));
   const switchMode = (next: AppMode) => {
-    if (next === "server" && import.meta.env.VITE_STATIC_SITE === "1") { setServerConnectionOpen(true); return; }
+    if (next === "local" && import.meta.env.VITE_STATIC_SITE === "1") { setServerConnectionOpen(true); return; }
     if (next !== mode) { setMode(next); navigate(isStudy ? `${location.pathname}${location.search}` : "/"); }
   };
   useEffect(() => { window.scrollTo(0, 0); }, [location.pathname]);
@@ -65,16 +67,24 @@ export function App() {
             </NavLink>
           ))}
         </nav>
-        <p className="sidebarFootnote">{mode === "guest" ? "Свободная тренировка" : "Серверная коллекция"}<br />TR / RU</p>
+        <p className="sidebarFootnote">{mode === "guest" ? "Свободная тренировка" : cloudBuild ? "Облачная коллекция" : "Серверная коллекция"}<br />TR / RU</p>
       </aside>
 
       <main className="content">
         <div className="appModeBar">
-          <TwoPositionSwitch label="Режим приложения: сервер на ПК" left="Свободная" right="На ПК" checked={mode === "server"} onChange={checked => switchMode(checked ? "server" : "guest")} />
-          {isStudy ? <div className="studyHeaderStats" ref={setStatsHost} /> : <p>{mode === "guest" ? "Работает без домашнего сервера · без записи в аккаунт" : "Личная коллекция и прогресс · требуется доступный сервер"}</p>}
+          <TwoPositionSwitch label={cloudBuild ? "Режим приложения: аккаунт" : "Режим приложения: сервер на ПК"} left="Свободная" right={cloudBuild ? "Аккаунт" : "На ПК"} checked={mode !== "guest"} onChange={checked => switchMode(checked ? cloudBuild ? "cloud" : "local" : "guest")} />
+          {isStudy ? <div className="studyHeaderStats" ref={setStatsHost} /> : <p>{mode === "guest" ? "Работает без домашнего сервера · без записи в аккаунт" : cloudBuild ? "Облачный пилот · личный прогресс" : "Личная коллекция и прогресс · требуется доступный сервер"}</p>}
         </div>
         <StudyStatsHost.Provider value={statsHost}><Suspense fallback={<p className="statusMessage" role="status">Загружаем…</p>}>
-        {mode === "guest" ? <PublicDeckProvider><GuestRoutes /></PublicDeckProvider> :
+        {mode === "guest" ? <PublicDeckProvider><GuestRoutes /></PublicDeckProvider> : cloudBuild ?
+        <CloudAccount><Routes>
+          <Route element={<DashboardPage />} path="/" />
+          <Route element={<DashboardPage />} path="/auth/callback" />
+          <Route element={<StudyPage readOnly />} path="/study" />
+          <Route element={<DictionaryPage readOnly />} path="/dictionary" />
+          <Route element={<p className="statusMessage">В пилоте доступны занятия и чтение словаря. Редактор и обновления будут подключены перед переносом личной базы.</p>} path="/settings" />
+          <Route element={<NotFoundPage />} path="*" />
+        </Routes></CloudAccount> :
         <Routes>
           <Route element={<DashboardPage />} path="/" />
           <Route element={<StudyPage />} path="/study" />
@@ -86,7 +96,7 @@ export function App() {
         }
         </Suspense></StudyStatsHost.Provider>
       </main>
-      {serverConnectionOpen && <ServerConnection route={isStudy ? `${location.pathname}${location.search}` : "/"} onClose={() => setServerConnectionOpen(false)} />}
+      {!cloudBuild && serverConnectionOpen && <ServerConnection route={isStudy ? `${location.pathname}${location.search}` : "/"} onClose={() => setServerConnectionOpen(false)} />}
     </div>
   );
 }

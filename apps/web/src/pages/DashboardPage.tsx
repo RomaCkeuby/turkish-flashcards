@@ -53,7 +53,7 @@ export function DashboardPage() {
         <p className="eyebrow">Dashboard</p>
         <h1>Главная</h1>
         <p className="lead">
-          {status === "ready" ? "Личная коллекция для занятий на турецком и русском языках." : "Личная коллекция на сервере ПК."}
+          Личная коллекция для занятий на турецком и русском языках.
         </p>
       </header>
 

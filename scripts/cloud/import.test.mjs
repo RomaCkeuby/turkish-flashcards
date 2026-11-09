@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { openDatabase, patchEntry, recordReview, createUserEntry } from '../../apps/server/src/database.ts';
+import { createSnapshot } from './snapshot.mjs';
+import { planImport } from './import.mjs';
+import { checkRestore } from './restore-check.mjs';
+import { createTestDatabase } from './postgres-fixture.mjs';
+
+test('complete portable export restores effective values, daily stats and owner-only progress',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'cloud-import-'));
+  const live=openDatabase(join(directory,'live.db'));
+  t.after(()=>{live.close();rmSync(directory,{recursive:true,force:true});});
+  createUserEntry(live,{turkish:"test'$$; --",russian:'личное слово'});
+  patchEntry(live,1,{russian:'мой перевод',tags:[],exampleTurkish:'',exampleRussian:''});
+  recordReview(live,1,'correct'); recordReview(live,2,'incorrect');
+  const snapshot=join(directory,'snapshot');
+  await createSnapshot(join(directory,'live.db'),snapshot);
+  assert.throws(()=>planImport(snapshot),/explicit Auth owner UUID/);
+  const report=await checkRestore(snapshot);
+  assert.equal(report.verified.effectiveEntries,251);
+  assert.equal(report.verified.ownerProgress,2);
+  assert.equal(report.verified.otherProgress,0);
+  const db=await createTestDatabase();t.after(()=>db.close());
+  const id='00000000-0000-0000-0000-000000000001';
+  await db.query('insert into auth.users values($1,$2)',[id,'test@example.com']);
+  await assert.rejects(db.exec(planImport(snapshot,id).sql),/must be empty/);
+  await db.exec('rollback');
+  assert.equal((await db.query('select count(*)::integer count from public.entries')).rows[0].count,2);
+});

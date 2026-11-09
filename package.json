@@ -8,13 +8,22 @@
     "build": "pnpm -r build",
     "decks:build": "pnpm --filter @turkish-flashcards/server decks:build",
     "build:static": "pnpm decks:build && pnpm --filter @turkish-flashcards/web build:static",
+    "build:cloud": "pnpm decks:build && pnpm --filter @turkish-flashcards/web build:cloud && node scripts/cloud/check-artifact.mjs",
+    "dev:cloud": "pnpm --filter @turkish-flashcards/web dev:cloud",
+    "cloud:snapshot": "node --disable-warning=ExperimentalWarning scripts/cloud/snapshot.mjs",
+    "cloud:import": "node --disable-warning=ExperimentalWarning scripts/cloud/import.mjs",
+    "cloud:restore-check": "node --disable-warning=ExperimentalWarning scripts/cloud/restore-check.mjs",
+    "cloud:test": "node --disable-warning=ExperimentalWarning --test scripts/cloud/*.test.mjs",
     "start": "pnpm --filter @turkish-flashcards/server start",
     "personal:start": "powershell -NoProfile -File scripts/Start-Personal.ps1",
     "personal:stop": "powershell -NoProfile -File scripts/Stop-Personal.ps1",
+    "personal:autostart": "powershell -NoProfile -File scripts/Install-PersonalAutostart.ps1",
+    "personal:autostart:remove": "powershell -NoProfile -File scripts/Install-PersonalAutostart.ps1 -Uninstall",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test && pnpm cloud:test"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.3.14",
     "@types/node": "^22.13.14",
     "typescript": "^5.8.2"
   }

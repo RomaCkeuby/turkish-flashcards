@@ -6,6 +6,7 @@ import { Download, Plus, SlidersHorizontal } from "lucide-react";
 import { Modal } from "../components/Modal";
 import { CardInspector } from "../components/CardInspector";
 import { useMediaQuery } from "../components/useMediaQuery";
+import { EntryFilterFields } from "../components/EntryFilterFields";
 import { OnlineWordSearch } from "./OnlineWordSearch";
 
 import {
@@ -36,7 +37,7 @@ const statusLabels: Record<DictionaryEntry["status"], string> = {
 };
 const pageSize = 20;
 
-export function DictionaryPage() {
+export function DictionaryPage({ readOnly = false }: { readOnly?: boolean }) {
   const [entries, setEntries] = useState<DictionaryEntry[]>([]);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -129,9 +130,6 @@ export function DictionaryPage() {
     }, { replace: true });
   };
   const setSearch = (value: string) => updateParam("search", value);
-  const setCategory = (value: string) => updateParam("category", value);
-  const setPartOfSpeech = (value: string) => updateParam("partOfSpeech", value);
-  const setTag = (value: string) => updateParam("tag", value);
   const setStatusFilter = (value: string) => updateParam("status", value === "ALL" ? "" : value);
   const setPage = (value: number | ((current: number) => number)) => {
     const next = typeof value === "function" ? value(page) : value;
@@ -244,58 +242,11 @@ export function DictionaryPage() {
             ))}
           </select>
         </label>
-        <label className="statusFilter">
-          <span>Категория</span>
-          <select
-            onChange={(event) => {
-              setCategory(event.target.value);
-            }}
-            value={category}
-          >
-            <option value="">Все</option>
-            {filterOptions.categories.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="statusFilter">
-          <span>Часть речи</span>
-          <select
-            onChange={(event) => {
-              setPartOfSpeech(event.target.value);
-            }}
-            value={partOfSpeech}
-          >
-            <option value="">Все</option>
-            {filterOptions.partsOfSpeech.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="statusFilter">
-          <span>Тег</span>
-          <select
-            onChange={(event) => {
-              setTag(event.target.value);
-            }}
-            value={tag}
-          >
-            <option value="">Все</option>
-            {filterOptions.tags.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
+        <EntryFilterFields options={filterOptions} values={{ category, partOfSpeech, tag }} onChange={updateParam} />
           {filterCount > 0 && <button className="textButton" type="button" onClick={() => { setSelectedId(null); setParams(search ? { search } : {}, { replace: true }); }}>Сбросить фильтры</button>}
           </div>
         </details>
-        <button className="primaryButton toolbarAction" aria-label="Добавить слово" title="Добавить слово" onClick={() => { setCreateWord({ turkish: "", russian: "" }); setCreateMessage(""); setIsCreateOpen(true); }} type="button">
+        {!readOnly && <><button className="primaryButton toolbarAction" aria-label="Добавить слово" title="Добавить слово" onClick={() => { setCreateWord({ turkish: "", russian: "" }); setCreateMessage(""); setIsCreateOpen(true); }} type="button">
           <Plus size={19} /><span className="buttonText">Добавить слово</span>
         </button>
         <button
@@ -311,16 +262,16 @@ export function DictionaryPage() {
           type="button"
         >
           <Download size={18} /><span className="buttonText">Из подборки</span>
-        </button>
+        </button></>}
       </div>
 
-      <div className="updateActions"><button className="secondaryButton" type="button" onClick={async () => {
+      {!readOnly && <div className="updateActions"><button className="secondaryButton" type="button" onClick={async () => {
         setAuditOpen(true); setAuditBusy(true); setAudit(null); setAuditError("");
         try { setAudit(await auditDictionary()); }
         catch { setAuditError("Не удалось проверить словарь."); }
         finally { setAuditBusy(false); }
       }}>Проверить точность и совпадения</button>
-      <button className="secondaryButton" type="button" onClick={() => setRemovedOpen(true)}>Удалённые и объединённые</button></div>
+      <button className="secondaryButton" type="button" onClick={() => setRemovedOpen(true)}>Удалённые и объединённые</button></div>}
       {removedOpen && <Modal title="Удалённые и объединённые карточки" onClose={() => setRemovedOpen(false)}>
         <RemovedEntries onChange={() => setRefreshTick(value => value + 1)} />
       </Modal>}
@@ -466,12 +417,12 @@ export function DictionaryPage() {
 
       {status === "loading" && <p className="statusMessage">Загружаем словарь…</p>}
       {status === "error" && (
-        <p className="statusMessage errorMessage">Не удалось прочитать локальную базу.</p>
+        <p className="statusMessage errorMessage">Не удалось загрузить словарь.</p>
       )}
       {status === "ready" && entries.length === 0 && (
         <div>
           <p>В личной коллекции по этому запросу ничего не найдено.</p>
-          {search.trim().length >= 2 && search.trim().length <= 100 && (
+          {!readOnly && search.trim().length >= 2 && search.trim().length <= 100 && (
             <OnlineWordSearch key={search.trim()} query={search.trim()} />
           )}
         </div>
@@ -528,10 +479,20 @@ export function DictionaryPage() {
             </button>
           </div>
         </div>
-        {isWide && selectedEntry && <aside className="cardInspector" aria-label="Просмотр карточки"><CardInspector entryId={selectedEntry.id} /></aside>}
+        {isWide && selectedEntry && <aside className="cardInspector" aria-label="Просмотр карточки">{readOnly ? <ReadOnlyEntry entry={selectedEntry} /> : <CardInspector entryId={selectedEntry.id} />}</aside>}
         </div>
       )}
-      {!isWide && selectedEntry && <Modal title="Карточка" className="inspectorModal" onClose={() => setSelectedId(null)}><CardInspector entryId={selectedEntry.id} /></Modal>}
+      {!isWide && selectedEntry && <Modal title="Карточка" className="inspectorModal" onClose={() => setSelectedId(null)}>{readOnly ? <ReadOnlyEntry entry={selectedEntry} /> : <CardInspector entryId={selectedEntry.id} />}</Modal>}
     </section>
   );
+}
+
+function ReadOnlyEntry({ entry }: { entry: DictionaryEntry }) {
+  return <div className="inspectorBody"><h2 lang="tr">{entry.turkish}</h2><p className="inspectorTranslation">{entry.russian}</p>
+    <p>{entry.partOfSpeech} · {entry.category}</p>
+    {entry.tags.length > 0 && <div className="tagList">{entry.tags.map(tag => <span key={tag}>{tag}</span>)}</div>}
+    {entry.exampleTurkish && <blockquote className="inspectorExample"><p lang="tr">{entry.exampleTurkish}</p><p>{entry.exampleRussian}</p>
+      {entry.exampleSourceUrl && <a href={entry.exampleSourceUrl} target="_blank" rel="noreferrer">{entry.exampleSource} · {entry.exampleSourceLicense}</a>}</blockquote>}
+    {entry.sourceUrl ? <a href={entry.sourceUrl} target="_blank" rel="noreferrer">{entry.sourceName} · {entry.sourceLicense}</a> : <p>{entry.sourceName} · {entry.sourceLicense}</p>}
+  </div>;
 }

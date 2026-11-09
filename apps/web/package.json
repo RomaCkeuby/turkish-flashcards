@@ -7,10 +7,13 @@
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "tsc -b && vite build",
     "build:static": "tsc -b && vite build --mode static",
+    "build:cloud": "tsc -b && vite build --mode cloud",
+    "dev:cloud": "vite --host 127.0.0.1 --port 5173 --mode cloud",
     "typecheck": "tsc -b --pretty false",
-    "test": "node --disable-warning=ExperimentalWarning --test test/uiLogic.test.ts test/guestDeck.test.ts test/publicDeck.test.ts"
+    "test": "node --disable-warning=ExperimentalWarning --test test/uiLogic.test.ts test/guestDeck.test.ts test/publicDeck.test.ts test/cloudConfig.test.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "lucide-react": "^1.63.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

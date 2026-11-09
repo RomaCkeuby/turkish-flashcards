@@ -361,3 +361,45 @@ test("next repetition uses the earlier direction", (context) => {
   recordReview(f.database, second!.id, "correct", time);
   assert.equal(detail(f.database, word.id).review.dueAt, due.dueAt);
 });
+
+test("dictionary pagination preserves counts, effective filters, tags and Turkish search", (context) => {
+  const { database } = fixture(context);
+  const first = createUserEntry(database, { turkish: "İNCİ-test", russian: "жемчуг", category: "pagination", tags: ["shared"] })!;
+  createUserEntry(database, { turkish: "IRMAK-test", russian: "река", category: "pagination", tags: ["shared"] });
+  const last = createUserEntry(database, { turkish: "Z-test", russian: "последний", category: "pagination", tags: ["shared"] })!;
+  patchEntry(database, first.effective.id, { partOfSpeech: "test", tags: ["overridden"] });
+  patchEntry(database, last.effective.id, { status: "ARCHIVED" });
+  const filters = { category: "pagination" };
+  const all = getEntries(database, "", 100, 0, filters);
+  assert.equal(all.total, 3);
+  for (let offset = 0; offset <= all.total; offset++) {
+    assert.deepEqual(getEntries(database, "   ", 1, offset, filters), {
+      entries: all.entries.slice(offset, offset + 1), total: all.total,
+    });
+  }
+  assert.deepEqual(getEntries(database, "", 0, 0, filters), { entries: [], total: 3 });
+  assert.equal(getEntries(database, "", 10, 0, { ...filters, status: "ACTIVE" }).total, 2);
+  assert.equal(getEntries(database, "", 10, 0, { ...filters, tag: "shared" }).total, 2);
+  assert.deepEqual(getEntries(database, "", 10, 0, { ...filters, partOfSpeech: "test", tag: "overridden" }).entries, [
+    all.entries.find(entry => entry.id === first.effective.id),
+  ]);
+  assert.equal(getEntries(database, "inci-test", 10, 0, filters).entries[0]?.id, first.effective.id);
+  assert.equal(getEntries(database, "ırmak-test", 10, 0, filters).total, 1);
+  assert.equal(getEntries(database, "ЖЕМЧУГ", 10, 0, filters).total, 1);
+});
+
+test("full dictionary reads do not hit SQLite's bound-parameter limit when attaching tags", (context) => {
+  const { database } = fixture(context);
+  database.exec(`
+    WITH RECURSIVE sequence(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM sequence WHERE n < 33000)
+    INSERT INTO entries (source_id, source_key, turkish, russian, part_of_speech, category, created_at, updated_at)
+    SELECT (SELECT id FROM sources LIMIT 1), 'bulk:' || n, 'bulk-' || n, 'тест', 'слово', 'bulk', '', ''
+    FROM sequence;
+    INSERT INTO entry_tags (entry_id, layer, tag, created_at)
+    SELECT id, 'base', 'bulk-tag', '' FROM entries WHERE category = 'bulk';
+  `);
+  const result = getEntries(database, "", Number.MAX_SAFE_INTEGER, 0, { category: "bulk" });
+  assert.equal(result.total, 33000);
+  assert.equal(result.entries.length, 33000);
+  assert.ok(result.entries.every(entry => entry.tags.length === 1 && entry.tags[0] === "bulk-tag"));
+});

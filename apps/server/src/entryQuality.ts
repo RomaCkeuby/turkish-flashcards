@@ -13,10 +13,11 @@ export function meaningKeys(value: string) {
 type Word = Pick<DictionaryEntry, "turkish" | "russian" | "exampleTurkish" | "exampleRussian">;
 export function checkLocalEntry(database: DatabaseSync, word: Word, excludeId?: number) {
   const meanings = new Set(meaningKeys(word.russian));
+  const wordKey = normalizeTurkishKey(word.turkish);
   const matches = getEntries(database, "", Number.MAX_SAFE_INTEGER, 0).entries
     .filter(entry => entry.id !== excludeId)
     .map(entry => ({ id: entry.id, turkish: entry.turkish, russian: entry.russian, partOfSpeech: entry.partOfSpeech,
-      sameWord: normalizeTurkishKey(entry.turkish) === normalizeTurkishKey(word.turkish),
+      sameWord: normalizeTurkishKey(entry.turkish) === wordKey,
       sharedMeanings: meaningKeys(entry.russian).filter(meaning => meanings.has(meaning)) }))
     .filter(entry => entry.sameWord || entry.sharedMeanings.length > 0);
   const warnings: string[] = [];
@@ -32,10 +33,14 @@ export function auditDictionary(database: DatabaseSync) {
   const entries = getEntries(database, "", Number.MAX_SAFE_INTEGER, 0).entries;
   const index = new Map<string, DictionaryEntry[]>();
   const words = new Map<string, DictionaryEntry[]>();
+  const add = (groups: Map<string, DictionaryEntry[]>, key: string, entry: DictionaryEntry) => {
+    const group = groups.get(key);
+    if (group) group.push(entry);
+    else groups.set(key, [entry]);
+  };
   for (const entry of entries) {
-    for (const key of meaningKeys(entry.russian)) index.set(key, [...(index.get(key) ?? []), entry]);
-    const key = normalizeTurkishKey(entry.turkish);
-    words.set(key, [...(words.get(key) ?? []), entry]);
+    for (const key of meaningKeys(entry.russian)) add(index, key, entry);
+    add(words, normalizeTurkishKey(entry.turkish), entry);
   }
   return { checkedAt: new Date().toISOString(), total: entries.length,
     groups: [...index].filter(([, items]) => items.length > 1).map(([meaning, items]) => ({ reason: "meaning", key: meaning, entries: items })),
@@ -48,7 +53,9 @@ export async function verifyEntry(database: DatabaseSync, entryId: number, fetch
   const detail = getEntryDetail(database, entryId);
   if (!detail || detail.removal) return null;
   const word = detail.effective;
-  const meanings = meaningKeys(word.russian).slice(0, 3);
+  const wordKey = normalizeTurkishKey(word.turkish);
+  const meaningSet = new Set(meaningKeys(word.russian));
+  const meanings = [...meaningSet].slice(0, 3);
   const queries = [...new Set([word.turkish, ...meanings].filter(value => value.length >= 2 && value.length <= 100))];
   const tdkRequest = async () => {
     const url = new URL("https://sozluk.gov.tr/gts");
@@ -59,7 +66,7 @@ export async function verifyEntry(database: DatabaseSync, entryId: number, fetch
     if (typeof data === "object" && data !== null && "error" in data) return [];
     if (!Array.isArray(data)) throw new Error("Некорректный ответ TDK");
     return (data as { madde?: string; anlamlarListe?: { anlam?: string }[] }[])
-      .filter(item => typeof item.madde === "string" && normalizeTurkishKey(item.madde) === normalizeTurkishKey(word.turkish))
+      .filter(item => typeof item.madde === "string" && normalizeTurkishKey(item.madde) === wordKey)
       .flatMap(item => item.anlamlarListe ?? []).map(item => item.anlam).filter((text): text is string => typeof text === "string");
   };
   const [results, tdk] = await Promise.all([
@@ -71,8 +78,8 @@ export async function verifyEntry(database: DatabaseSync, entryId: number, fetch
     const sourceUrl = `https://ru.wiktionary.org/wiki/${encodeURIComponent(query)}`;
     if (result.status === "rejected") return { query, sourceUrl, status: "unavailable", candidates: [] };
     const candidates = result.value.map(({ turkish, russian, partOfSpeech, sourceUrl }) => ({ turkish, russian, partOfSpeech, sourceUrl }));
-    const matched = candidates.some(candidate => normalizeTurkishKey(candidate.turkish) === normalizeTurkishKey(word.turkish) &&
-      meaningKeys(candidate.russian).some(key => meaningKeys(word.russian).includes(key)));
+    const matched = candidates.some(candidate => normalizeTurkishKey(candidate.turkish) === wordKey &&
+      meaningKeys(candidate.russian).some(key => meaningSet.has(key)));
     return { query, sourceUrl, status: matched ? "matched" : candidates.length ? "differences" : "not_found", candidates };
   });
   const definitions = tdk.status === "fulfilled" ? tdk.value : [];

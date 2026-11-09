@@ -2,15 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Pencil, RotateCcw } from "lucide-react";
 import { StudyReviewActions } from "../components/StudyReviewActions";
-import { StudyFilterFields } from "../components/StudyFilterFields";
+import { EntryFilterFields } from "../components/EntryFilterFields";
 import { StudyFilters } from "../components/StudyFilters";
 import { TwoPositionSwitch } from "../components/TwoPositionSwitch";
 import { StudyStats } from "../components/StudyStats";
 import { StudyAnswer } from "../components/StudyAnswer";
 import { StudyPrompt } from "../components/StudyPrompt";
+import { useStudyShortcuts } from "../components/useStudyShortcuts";
 import { fetchEntryFilters, fetchNextCard, submitReview, undoLastReview, type CardDirection,
   type EntryFilterOptions, type QueueStats, type ReviewResult, type StudyCard, type StudyMode } from "../api";
-import { readStudySession, saveStudySession, studyKey, studyShortcut, type StudyUndo } from "../studySession";
+import { readStudySession, saveStudySession, studyKey, type StudyUndo } from "../studySession";
+import { cloudIdentityRevision } from "../cloud/identity";
 
 const emptyQueue: QueueStats = { accuracyToday: null, correctToday: 0, due: 0,
   isDoneToday: false, newAvailable: 0, newTotal: 0, newUsedToday: 0, reviewedToday: 0 };
@@ -20,7 +22,7 @@ function highlightTerm(text: string, term: string) {
   return index < 0 ? text : <>{text.slice(0, index)}<strong>{text.slice(index, index + term.length)}</strong>{text.slice(index + term.length)}</>;
 }
 
-export function StudyPage() {
+export function StudyPage({ readOnly = false }: { readOnly?: boolean }) {
   const [params, setParams] = useSearchParams();
   const direction: CardDirection = params.get("direction") === "ru-tr" ? "ru-tr" : "tr-ru";
   const mode: StudyMode = params.get("mode") === "review" ? "review" : params.get("mode") === "new" ? "new" : "all";
@@ -37,6 +39,7 @@ export function StudyPage() {
   const [feedback, setFeedback] = useState("");
   const [undo, setUndo] = useState<StudyUndo | null>(() => readStudySession()?.undo ?? null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [failedReview, setFailedReview] = useState<ReviewResult | null>(null);
   const [status, setStatus] = useState<"done" | "error" | "loading" | "ready">("loading");
   const request = useRef<AbortController | null>(null);
   const loadedKey = useRef("");
@@ -64,6 +67,7 @@ export function StudyPage() {
       if (controller.signal.aborted) return;
       loadedKey.current = key;
       setCard(data.card); setQueue(data.queue);
+      if (import.meta.env.VITE_APP_MODE === "cloud") { setUndo(readStudySession()?.undo ?? null); setFailedReview(null); }
       setRevealed(Boolean(restoreRevealed && data.card?.id === preferredCardId));
       setStatus(data.card ? "ready" : "done");
     } catch { if (!controller.signal.aborted) setStatus("error"); }
@@ -90,11 +94,14 @@ export function StudyPage() {
   };
 
   const rateCard = async (result: ReviewResult) => {
-    if (!card || mutationPending.current || !revealed || status !== "ready") return;
+    if (!card || mutationPending.current || !revealed || (status !== "ready" && !failedReview)) return;
     mutationPending.current = true; setIsSubmitting(true);
+    const identityRevision = cloudIdentityRevision();
     saveStudySession({ key, cardId: null, revealed: false, undo });
     try {
       const schedule = await submitReview(card.id, result);
+      if (identityRevision !== cloudIdentityRevision()) return;
+      setFailedReview(null);
       const nextUndo = { token: schedule.undoToken, cardId: card.id, query };
       saveStudySession({ key, cardId: null, revealed: false, undo: nextUndo });
       if (!mounted.current || currentKey.current !== key) return;
@@ -102,15 +109,17 @@ export function StudyPage() {
       setFeedback(result === "correct" ? "Верно. Ответ сохранён" : "Повтор через 5 минут");
       await loadCard();
     } catch (error) {
-      if (mounted.current) { setFeedback(error instanceof Error ? error.message : "Не удалось сохранить ответ."); setStatus("error"); }
+      if (mounted.current) { setFailedReview(import.meta.env.VITE_APP_MODE === "cloud" ? result : null); setFeedback(error instanceof Error ? error.message : "Не удалось сохранить ответ."); setStatus("error"); }
     } finally { mutationPending.current = false; if (mounted.current) setIsSubmitting(false); }
   };
 
   const undoRating = async () => {
     if (!undo || mutationPending.current) return;
     mutationPending.current = true; setIsSubmitting(true);
+    const identityRevision = cloudIdentityRevision();
     try {
       await undoLastReview(undo.token);
+      if (identityRevision !== cloudIdentityRevision()) return;
       const restoredParams = new URLSearchParams(undo.query);
       const restoredKey = studyKey(restoredParams);
       saveStudySession({ key: restoredKey, cardId: undo.cardId, revealed: true, undo: null });
@@ -123,22 +132,10 @@ export function StudyPage() {
     } finally { mutationPending.current = false; if (mounted.current) setIsSubmitting(false); }
   };
 
-  useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const editing = Boolean(target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], details[open]"));
-      const action = studyShortcut(event, editing);
-      if (action === "undo" && undo && !isSubmitting) { event.preventDefault(); void undoRating(); }
-      else if (status === "ready" && !isSubmitting) {
-        if (action === "reveal" && !revealed && !target?.closest("button, a, summary")) {
-          event.preventDefault(); setRevealed(true);
-        } else if ((action === "correct" || action === "incorrect") && revealed) {
-          event.preventDefault(); void rateCard(action);
-        }
-      }
-    };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
+  useStudyShortcuts({
+    onReveal: status === "ready" && !isSubmitting && !revealed ? () => setRevealed(true) : undefined,
+    onRate: status === "ready" && !isSubmitting && revealed ? correct => void rateCard(correct ? "correct" : "incorrect") : undefined,
+    onUndo: undo && !isSubmitting ? () => void undoRating() : undefined,
   });
 
   const prompt = (direction === "tr-ru" ? card?.turkish : card?.russian) ?? "";
@@ -152,7 +149,7 @@ export function StudyPage() {
       <div className="studyTools">
         <StudyFilters count={filterCount}>
             <label className="statusFilter"><span>Режим занятия</span><select value={mode} disabled={isSubmitting} onChange={e => change("mode", e.target.value)}><option value="all">Все карточки</option><option value="review">Только повторение</option><option value="new">Только новые</option></select></label>
-            <StudyFilterFields options={filterOptions} values={{ category, partOfSpeech, tag }} onChange={change} disabled={isSubmitting} />
+            <EntryFilterFields options={filterOptions} values={{ category, partOfSpeech, tag }} onChange={change} disabled={isSubmitting} />
             {filterCount > 0 && <button className="textButton" type="button" disabled={isSubmitting} onClick={() => { setFeedback(""); setParams({ direction }, { replace: true }); }}>Сбросить фильтры</button>}
         </StudyFilters>
       </div>
@@ -161,12 +158,12 @@ export function StudyPage() {
     <div className="feedbackSlot" aria-live="polite">{feedback}</div>
     <div className="studyPreview" aria-busy={status === "loading"}>
       {status === "loading" && <p className="statusMessage" role="status">Выбираем карточку…</p>}
-      {status === "error" && <div className="donePanel"><p className="errorMessage" role="alert">Не удалось загрузить карточку или сохранить ответ.</p><button className="secondaryButton" onClick={() => void loadCard()}><RotateCcw size={16} />Повторить</button></div>}
+      {status === "error" && <div className="donePanel"><p className="errorMessage" role="alert">{failedReview ? "Результат сохранения ответа пока не подтверждён." : "Не удалось загрузить карточку."}</p><button className="secondaryButton" disabled={isSubmitting} onClick={() => failedReview ? void rateCard(failedReview) : void loadCard()}><RotateCcw size={16} />{failedReview ? "Проверить сохранение ответа" : "Повторить"}</button></div>}
       {status === "done" && <div className="donePanel"><h2>{mode === "review" ? "Сейчас повторять нечего" : mode === "new" ? "Новых карточек нет" : "Очередь пуста"}</h2><p className="statusMessage">{filterCount > 0 ? "По выбранным фильтрам нет доступных карточек." : "Карточки для повторения появятся, когда подойдёт их время."}</p><div className="updateActions"><button className="secondaryButton" onClick={() => void loadCard()}><RotateCcw size={16} />Проверить снова</button>{mode !== "all" && <button className="secondaryButton" onClick={() => change("mode", "all")}>Все карточки</button>}</div></div>}
       {status === "ready" && card && <div className="studyCardLayout">
         <StudyPrompt><p className="cardLabel">{card.category}</p><p className={`cardPrompt${prompt.length > 28 ? " longPrompt" : ""}`} lang={direction === "tr-ru" ? "tr" : "ru"}>{prompt}</p><p className="cardPartOfSpeech">{card.partOfSpeech}</p></StudyPrompt>
         <div className={`cardAnswerPane${revealed ? " isRevealed" : ""}`}>
-          {revealed ? <StudyAnswer><div className="answerHeader"><span>Перевод</span><Link className="editHintButton" aria-label="Редактировать эту карточку" title="Редактировать эту карточку" to={`/card/${card.entryId}#edit`} state={{ returnTo }}><Pencil size={19} /></Link></div>
+          {revealed ? <StudyAnswer><div className="answerHeader"><span>Перевод</span>{!readOnly && <Link className="editHintButton" aria-label="Редактировать эту карточку" title="Редактировать эту карточку" to={`/card/${card.entryId}#edit`} state={{ returnTo }}><Pencil size={19} /></Link>}</div>
             <strong className="answerTranslation" lang={direction === "tr-ru" ? "ru" : "tr"}>{answer}</strong>
             {card.exampleTurkish && card.exampleRussian && <div className="cardExample"><p lang="tr">{highlightTerm(card.exampleTurkish, card.turkish)}</p><p>{card.exampleRussian}</p>{card.exampleSourceUrl && <a href={card.exampleSourceUrl} rel="noreferrer" target="_blank">{card.exampleSource || "Источник примера"}</a>}</div>}
           </StudyAnswer> : <p className="answerPlaceholder">Перевод появится после нажатия кнопки</p>}

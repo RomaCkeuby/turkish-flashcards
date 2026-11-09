@@ -656,10 +656,9 @@ const dictionaryEntrySelect = `
     AND NOT EXISTS (SELECT 1 FROM entry_removals WHERE entry_id = entries.id)
 `;
 
-function buildEntryFilterClause(search: string, filters: EntryFilters) {
+function buildEntryFilterClause(filters: EntryFilters) {
   const clauses: string[] = [];
   const parameters: SQLInputValue[] = [];
-  void search;
 
   if (filters.status) {
     clauses.push("status = ?");
@@ -701,28 +700,33 @@ export function getEntries(
   offset: number,
   filters: EntryFilters = {},
 ) {
-  const { clause, parameters } = buildEntryFilterClause(search, filters);
-  const allEntries = database.prepare(`
-    SELECT *
-    FROM (${dictionaryEntrySelect}) AS effective_entries
-    ${clause}
-    ORDER BY turkish COLLATE NOCASE
-  `).all(...parameters) as unknown as DictionaryEntry[];
+  const { clause, parameters } = buildEntryFilterClause(filters);
+  const from = `FROM (${dictionaryEntrySelect}) AS effective_entries ${clause}`;
   const normalizedSearch = search.trim().toLocaleLowerCase("tr-TR");
-  const filteredEntries = normalizedSearch
-    ? allEntries.filter((entry) => {
-        const turkish = entry.turkish.toLocaleLowerCase("tr-TR");
-        const russian = entry.russian.toLocaleLowerCase("tr-TR");
-        return turkish.includes(normalizedSearch) || russian.includes(normalizedSearch);
-      })
-    : allEntries;
-  const entries = filteredEntries.slice(offset, offset + limit);
+  let entries: DictionaryEntry[];
+  let total: number;
+  if (normalizedSearch) {
+    // SQLite NOCASE does not handle Turkish casing. Keep locale-aware search here.
+    const allEntries = database.prepare(`SELECT * ${from} ORDER BY turkish COLLATE NOCASE`)
+      .all(...parameters) as unknown as DictionaryEntry[];
+    const filteredEntries = allEntries.filter((entry) => {
+      const turkish = entry.turkish.toLocaleLowerCase("tr-TR");
+      const russian = entry.russian.toLocaleLowerCase("tr-TR");
+      return turkish.includes(normalizedSearch) || russian.includes(normalizedSearch);
+    });
+    entries = filteredEntries.slice(offset, offset + limit);
+    total = filteredEntries.length;
+  } else {
+    total = (database.prepare(`SELECT COUNT(*) AS count ${from}`).get(...parameters) as CountRow).count;
+    entries = database.prepare(`SELECT * ${from} ORDER BY turkish COLLATE NOCASE LIMIT ? OFFSET ?`)
+      .all(...parameters, limit, offset) as unknown as DictionaryEntry[];
+  }
 
   attachTags(database, entries);
 
   return {
     entries,
-    total: filteredEntries.length,
+    total,
   };
 }
 
@@ -763,17 +767,18 @@ function attachTags(database: DatabaseSync, entries: DictionaryEntry[]) {
   }
 
   const ids = entries.map((entry) => entry.id);
-  const placeholders = ids.map(() => "?").join(", ");
   const rows = database.prepare(`
     SELECT entry_id AS entryId, tag
     FROM effective_entry_tags
-    WHERE entry_id IN (${placeholders})
+    WHERE entry_id IN (SELECT value FROM json_each(?))
     ORDER BY tag COLLATE NOCASE
-  `).all(...ids) as { entryId: number; tag: string }[];
+  `).all(JSON.stringify(ids)) as { entryId: number; tag: string }[];
   const tagsByEntry = new Map<number, string[]>();
 
   for (const row of rows) {
-    tagsByEntry.set(row.entryId, [...(tagsByEntry.get(row.entryId) ?? []), row.tag]);
+    const tags = tagsByEntry.get(row.entryId);
+    if (tags) tags.push(row.tag);
+    else tagsByEntry.set(row.entryId, [row.tag]);
   }
 
   for (const entry of entries) {
@@ -781,61 +786,7 @@ function attachTags(database: DatabaseSync, entries: DictionaryEntry[]) {
   }
 }
 
-export function getNextCard(
-  database: DatabaseSync,
-  direction: CardDirection,
-  currentTime = new Date(),
-  filters: EntryFilters = {},
-  mode: StudyMode = "all",
-  preferredCardId?: number,
-) {
-  if (preferredCardId !== undefined) {
-    const preferred = getStudyCard(database, preferredCardId, direction, currentTime, filters, mode);
-    if (preferred) return preferred;
-  }
-  const { clause, parameters } = buildStudyFilterClause(filters);
-  const dueCard = database.prepare(`
-    SELECT
-      cards.id,
-      entries.id AS entryId,
-      cards.direction,
-      COALESCE(entry_overrides.turkish, entries.turkish) AS turkish,
-      COALESCE(entry_overrides.russian, entries.russian) AS russian,
-      COALESCE(override_example.turkish, entries.example_turkish) AS exampleTurkish,
-      COALESCE(override_example.russian, entries.example_russian) AS exampleRussian,
-      COALESCE(override_example.source_name, entries.example_source) AS exampleSource,
-      COALESCE(override_example.source_license, entries.example_source_license) AS exampleSourceLicense,
-      COALESCE(override_example.source_url, entries.example_source_url) AS exampleSourceUrl,
-      CASE WHEN override_example.id IS NULL THEN entries.example_translation_source_url ELSE '' END AS exampleTranslationSourceUrl,
-      COALESCE(entry_overrides.category, entries.category) AS category,
-      COALESCE(entry_overrides.part_of_speech, entries.part_of_speech) AS partOfSpeech
-    FROM cards
-    JOIN entries ON entries.id = cards.entry_id
-    JOIN review_state ON review_state.card_id = cards.id
-    LEFT JOIN entry_overrides ON entry_overrides.entry_id = entries.id
-    LEFT JOIN entry_example_items AS override_example
-      ON override_example.entry_id = entries.id
-      AND override_example.layer = 'override'
-      AND override_example.is_primary = 1
-    WHERE cards.enabled = 1
-      AND entries.active = 1
-      AND COALESCE(entry_overrides.status, 'ACTIVE') = 'ACTIVE'
-      AND cards.direction = ?
-      AND review_state.due_at <= ?
-      ${clause}
-    ORDER BY
-      review_state.due_at,
-      RANDOM()
-    LIMIT 1
-  `).get(direction, currentTime.toISOString(), ...parameters);
-
-  if (dueCard && mode !== "new") {
-    return dueCard;
-  }
-
-  if (mode === "review") return undefined;
-
-  return database.prepare(`
+const studyCardSelect = `
     SELECT
       cards.id,
       entries.id AS entryId,
@@ -862,6 +813,36 @@ export function getNextCard(
       AND entries.active = 1
       AND COALESCE(entry_overrides.status, 'ACTIVE') = 'ACTIVE'
       AND cards.direction = ?
+`;
+
+export function getNextCard(
+  database: DatabaseSync,
+  direction: CardDirection,
+  currentTime = new Date(),
+  filters: EntryFilters = {},
+  mode: StudyMode = "all",
+  preferredCardId?: number,
+) {
+  if (preferredCardId !== undefined) {
+    const preferred = getStudyCard(database, preferredCardId, direction, currentTime, filters, mode);
+    if (preferred) return preferred;
+  }
+  const { clause, parameters } = buildStudyFilterClause(filters);
+  if (mode !== "new") {
+    const dueCard = database.prepare(`
+      ${studyCardSelect}
+        AND review_state.due_at <= ?
+        ${clause}
+      ORDER BY review_state.due_at, RANDOM()
+      LIMIT 1
+    `).get(direction, currentTime.toISOString(), ...parameters);
+    if (dueCard) return dueCard;
+  }
+
+  if (mode === "review") return undefined;
+
+  return database.prepare(`
+    ${studyCardSelect}
       AND review_state.card_id IS NULL
       ${clause}
     ORDER BY RANDOM()

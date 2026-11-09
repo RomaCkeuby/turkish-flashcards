@@ -1,5 +1,5 @@
 type FilterName = "category" | "partOfSpeech" | "tag";
-export function StudyFilterFields({ options, values, onChange, disabled = false }: {
+export function EntryFilterFields({ options, values, onChange, disabled = false }: {
   options: { categories: string[]; partsOfSpeech: string[]; tags: string[] };
   values: Record<FilterName, string>; onChange: (name: FilterName, value: string) => void; disabled?: boolean;
 }) {

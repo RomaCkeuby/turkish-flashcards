@@ -194,6 +194,10 @@ export type EntryFilterOptions = {
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? "/api";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (import.meta.env.VITE_APP_MODE === "cloud") {
+    const { cloudRequest } = await import("./cloud/api");
+    return cloudRequest<T>(path, options);
+  }
   const response = await fetch(`${apiBaseUrl}${path}`, options);
 
   if (!response.ok) {

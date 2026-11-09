@@ -1,0 +1,40 @@
+name: Cloud migration checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Build pilot with inert test configuration
+        run: pnpm build:cloud
+        env:
+          VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      # Deliberately no deploy or artifact upload: this has no real cloud configuration.
+  supabase-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+      - run: supabase start -x studio,imgproxy,realtime,storage-api,edge-runtime,logflare,vector,supavisor
+      - run: supabase db reset
+      - run: supabase test db
+      - run: supabase db lint --level error
+      - if: always()
+        run: supabase stop --no-backup

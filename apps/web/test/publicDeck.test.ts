@@ -13,7 +13,8 @@ const manifest = { schemaVersion: 1, version: "test-v1", recordCount: 1, file: `
 
 test("static site starts as guest and existing local build retains server mode", () => {
   assert.equal(initialAppMode(true), "guest");
-  assert.equal(initialAppMode(false), "server");
+  assert.equal(initialAppMode(false), "local");
+  assert.equal(initialAppMode(false, "cloud"), "cloud");
 });
 
 test("server transition opens its own origin and preserves the study direction", () => {

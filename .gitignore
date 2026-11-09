@@ -2,6 +2,10 @@ node_modules/
 .pnpm-store/
 dist/
 dist-static/
+dist-cloud/
+.wrangler/
+supabase/.temp/
+supabase/.branches/
 .vite/
 coverage/
 *.tsbuildinfo

@@ -20,6 +20,7 @@ const mimeTypes: Record<string, string> = {
   ".ico": "image/x-icon",
   ".webp": "image/webp",
   ".woff2": "font/woff2",
+  ".json": "application/json; charset=utf-8",
 };
 const developmentOrigins = new Set(["http://127.0.0.1:5173", "http://localhost:5173"]);
 
@@ -125,6 +126,12 @@ export function createSiteHandler(apiHandler: ApiHandler, options: SiteOptions):
       return;
     }
     const extension = extname(pathname);
+    // Only the published deck is a public JSON asset; other JSON files stay private.
+    if (extension === ".json" && !/^\/decks\/(?:manifest\.json|cards\.[a-f0-9]{16}\.json)$/.test(pathname)) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
     // Client-side routes return the app; missing assets must remain 404s.
     const path = extension ? resolve(webRoot, `.${pathname}`) : resolve(webRoot, "index.html");
     const mime = mimeTypes[extname(path)];

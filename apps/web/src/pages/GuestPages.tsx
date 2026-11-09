@@ -1,17 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, Route, Routes, useParams, useSearchParams } from "react-router-dom";
 import { RotateCcw } from "lucide-react";
 import { StudyReviewActions } from "../components/StudyReviewActions";
-import { StudyFilterFields } from "../components/StudyFilterFields";
+import { EntryFilterFields } from "../components/EntryFilterFields";
 import { StudyFilters } from "../components/StudyFilters";
 import { TwoPositionSwitch } from "../components/TwoPositionSwitch";
 import { StudyStats } from "../components/StudyStats";
 import { StudyAnswer } from "../components/StudyAnswer";
 import { StudyPrompt } from "../components/StudyPrompt";
+import { useStudyShortcuts } from "../components/useStudyShortcuts";
 import { createGuestDeck, filterGuestEntries, getGuestFilterOptions } from "../guestDeck";
 import { DeckStatus, usePublicDeck } from "../publicDeck";
 import type { PublicCardEntry } from "../publicDeckTypes";
-import { studyShortcut } from "../studySession";
 import { NotFoundPage } from "./NotFoundPage";
 
 type Direction = "tr-ru" | "ru-tr";
@@ -52,7 +52,7 @@ function GuestDashboard() {
 
 function GuestFilters({ entries, params, change }: { entries: PublicCardEntry[]; params: URLSearchParams; change: (name: string, value: string) => void }) {
   const options = useMemo(() => getGuestFilterOptions(entries), [entries]);
-  return <div className="guestFilters"><StudyFilterFields options={options} values={{ category: params.get("category") ?? "", partOfSpeech: params.get("partOfSpeech") ?? "", tag: params.get("tag") ?? "" }} onChange={change} /></div>;
+  return <div className="guestFilters"><EntryFilterFields options={options} values={{ category: params.get("category") ?? "", partOfSpeech: params.get("partOfSpeech") ?? "", tag: params.get("tag") ?? "" }} onChange={change} /></div>;
 }
 
 function useGuestParams() {
@@ -123,16 +123,10 @@ function GuestStudyRound({ entries, direction, category, partOfSpeech, tag, roun
     if (!index) return;
     setIndex(value => value - 1); setResults(previous => previous.slice(0, -1)); setRevealed(true);
   };
-  useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const action = studyShortcut(event, Boolean(target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], details[open]")));
-      if (action === "undo" && index) { event.preventDefault(); undo(); }
-      else if (action === "reveal" && card && !revealed && !target?.closest("button, a, summary")) { event.preventDefault(); setRevealed(true); }
-      else if ((action === "correct" || action === "incorrect") && revealed && card) { event.preventDefault(); rate(action === "correct"); }
-    };
-    document.addEventListener("keydown", keydown);
-    return () => document.removeEventListener("keydown", keydown);
+  useStudyShortcuts({
+    onReveal: card && !revealed ? () => setRevealed(true) : undefined,
+    onRate: card && revealed ? rate : undefined,
+    onUndo: index > 0 ? undo : undefined,
   });
   return <div className="studyRound">
     {!card ? <div className="studyPreview donePanel guestRoundDone"><h2>{deck.length ? "Проход завершён" : "Карточек по этим фильтрам нет"}</h2><p className="statusMessage">{deck.length ? "Можно перемешать колоду и начать новый проход." : "Выберите другую категорию, часть речи или тег."}</p></div> : <div className="studyPreview"><div className="studyCardLayout">

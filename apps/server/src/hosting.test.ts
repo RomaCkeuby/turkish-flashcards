@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -15,6 +16,15 @@ async function fixture(context: TestContext) {
   await writeFile(join(root, "private.db"), "private progress");
   await writeFile(join(root, "web", "index.html"), "<html>Flashcards</html>");
   await writeFile(join(root, "web", "assets", "app.js"), "console.log('app')");
+  await mkdir(join(root, "web", "decks"));
+  const deck = '[{"turkish":"merhaba","russian":"привет"}]\n';
+  const sha256 = createHash("sha256").update(deck).digest("hex");
+  await writeFile(join(root, "web", "decks", `cards.${sha256.slice(0, 16)}.json`), deck);
+  await writeFile(join(root, "web", "decks", "manifest.json"), JSON.stringify({
+    schemaVersion: 1, version: "test", recordCount: 1, file: `cards.${sha256.slice(0, 16)}.json`, sha256,
+  }));
+  await writeFile(join(root, "web", "config.json"), '{"private":"not a public deck"}');
+  await writeFile(join(root, "web", "decks", "private.json"), '{"private":"not a public deck"}');
   const handle = createSiteHandler(async (_req, res) => {
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ entries: 250 }));
@@ -87,4 +97,29 @@ test("cross-site writes and permissive production CORS are blocked", async conte
   const valid = await send("/api/entries", "POST", { authorization: auth });
   assert.equal(valid.status, 200);
   assert.equal(valid.headers["access-control-allow-origin"], undefined);
+});
+
+test("published deck JSON is served intact with auth while other JSON remains blocked", async context => {
+  const send = await fixture(context);
+  const headers = { authorization: auth };
+  assert.equal((await send("/decks/manifest.json")).status, 401);
+  const response = await send("/decks/manifest.json", "GET", headers);
+  assert.equal(response.status, 200);
+  assert.match(String(response.headers["content-type"]), /^application\/json/);
+  const manifest = JSON.parse(response.body);
+  const path = `/decks/${manifest.file}`;
+  assert.equal((await send(path)).status, 401);
+  const deck = await send(path, "GET", headers);
+  assert.equal(deck.status, 200);
+  assert.match(String(deck.headers["content-type"]), /^application\/json/);
+  assert.equal(createHash("sha256").update(deck.body).digest("hex"), manifest.sha256);
+  assert.equal(JSON.parse(deck.body)[0].russian, "привет");
+  const head = await send(path, "HEAD", headers);
+  assert.equal(head.status, 200);
+  assert.equal(head.body, "");
+  for (const privatePath of ["/config.json", "/decks/private.json", "/decks/missing.json", "/decks/cards.0000000000000000.json"]) {
+    const result = await send(privatePath, "GET", headers);
+    assert.equal(result.status, 404);
+    assert.doesNotMatch(result.body, /private/);
+  }
 });

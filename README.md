@@ -1,5 +1,21 @@
 # Turkish Flashcards
 
+Актуальная инструкция: [как подключаться и где хранятся данные](docs/USAGE.md).
+
+Миграция на [Cloudflare Pages + Supabase](ROADMAP-SUPABASE.md) начата:
+подготовлены PostgreSQL-миграции, облачный учебный пилот и проверенный локальный перенос
+снимка SQLite. [Статус, запуск и оставшиеся шаги](docs/CLOUD-MIGRATION.md),
+[права и карта API](docs/CLOUD-CONTRACT.md). Облачный сайт ещё не опубликован;
+рабочие данные остаются на ПК до полного переключения M8.
+
+Автозапуск на Windows и восстановление после сбоя: `pnpm personal:autostart`.
+Актуальная ссылка сохраняется в `.personal/server-url.txt`.
+[Управление автозапуском и настройка постоянного адреса Cloudflare](docs/PERSONAL-AUTOSTART.md).
+
+- Без включённого ПК: [свободная тренировка на GitHub Pages](https://romackeuby.github.io/turkish-flashcards/#/study?direction=tr-ru).
+- С сохранением нынешнего общего прогресса: адрес работающего ПК/туннеля, серверный режим. Текущий URL — поле `url` в `.personal/launch.json`.
+- Отдельные профили пользователей и подключение Pages к ПК пока не включены в рабочее приложение.
+
 ## Независимый сайт: первая волна гибридного режима
 
 GitHub Pages настроен на публикацию статического сайта через workflow `.github/workflows/pages.yml`. Адрес проекта: [romackeuby.github.io/turkish-flashcards](https://romackeuby.github.io/turkish-flashcards/). Публикация запускается после push в `codex/hybrid-offline-accounts` или `main`; состояние выпуска видно в GitHub Actions. В артефакт Pages включается только `apps/web/dist-static`, а не сервер и не SQLite-база. Для работы аккаунтов в дальнейшем потребуется подключение к серверу на ПК.
@@ -39,11 +55,18 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm cloud:test
 pnpm dev
 pnpm --filter @turkish-flashcards/server updates:build
 ```
 
 Команда `pnpm dev` запускает интерфейс на `http://127.0.0.1:5173` и локальный API на `http://127.0.0.1:3001`. База создаётся автоматически в `apps/server/storage/turkish-flashcards.db`.
+
+Для отдельного облачного пилота заполните `apps/web/.env.cloud.local` по примеру
+`apps/web/.env.example`, выполните `pnpm dev:cloud` или `pnpm build:cloud`.
+Публикуемый каталог — `apps/web/dist-cloud`; он содержит только интерфейс и публичную подборку.
+Пилот поддерживает занятия и чтение словаря; редактор, обновления и внешние словари
+пока работают в локальной версии. Не переносите рабочие данные до завершения M6–M7.
 
 Команда `updates:build` читает локально скачанный Kaikki/Wiktionary extract `apps/server/import-cache/tr-extract.jsonl.gz` и создаёт компактный пакет `apps/server/update-packages/current/cards.jsonl.gz` с `manifest.json` и SHA-256. Текущий пакет содержит 600 записей: 250 базовых и 350 новых записей с русским переводом из Kaikki/trwiktionary и примером из Tatoeba. Применение пакета доступно в настройках приложения: сначала показывается preview со списком конкретных изменений, затем обновление выполняется транзакцией с возможностью отката.
 
