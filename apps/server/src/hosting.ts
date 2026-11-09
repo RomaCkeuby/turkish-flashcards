@@ -22,7 +22,6 @@ const mimeTypes: Record<string, string> = {
   ".woff2": "font/woff2",
   ".json": "application/json; charset=utf-8",
 };
-const developmentOrigins = new Set(["http://127.0.0.1:5173", "http://localhost:5173"]);
 
 function digest(value: string) {
   return createHash("sha256").update(value).digest();
@@ -44,6 +43,11 @@ export function createSiteHandler(apiHandler: ApiHandler, options: SiteOptions):
   const credentials = options.username && options.password
     ? digest(`${options.username}:${options.password}`) : null;
   const webRoot = resolve(options.webRoot);
+  const developmentOrigins = new Set(["http://127.0.0.1:5173", "http://localhost:5173"]);
+  if (!options.production && process.env.CODESPACES === "true" &&
+      process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN) {
+    developmentOrigins.add(`https://${process.env.CODESPACE_NAME}-5173.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`);
+  }
 
   return async (request, response) => {
     response.setHeader("Cache-Control", "no-store");

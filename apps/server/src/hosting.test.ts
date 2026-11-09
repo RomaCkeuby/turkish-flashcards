@@ -10,7 +10,7 @@ import { createSiteHandler } from "./hosting.ts";
 const password = "test-only-long-password";
 const auth = `Basic ${Buffer.from(`roman:${password}`).toString("base64")}`;
 
-async function fixture(context: TestContext) {
+async function fixture(context: TestContext, production = true) {
   const root = await mkdtemp(join(tmpdir(), "flashcards-hosting-"));
   await mkdir(join(root, "web", "assets"), { recursive: true });
   await writeFile(join(root, "private.db"), "private progress");
@@ -28,7 +28,7 @@ async function fixture(context: TestContext) {
   const handle = createSiteHandler(async (_req, res) => {
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ entries: 250 }));
-  }, { production: true, webRoot: join(root, "web"), username: "roman", password });
+  }, { production, webRoot: join(root, "web"), username: "roman", password });
   const server = createServer((req, res) => { void handle(req, res).catch(error => res.destroy(error)); });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -97,6 +97,33 @@ test("cross-site writes and permissive production CORS are blocked", async conte
   const valid = await send("/api/entries", "POST", { authorization: auth });
   assert.equal(valid.status, 200);
   assert.equal(valid.headers["access-control-allow-origin"], undefined);
+});
+
+test("Codespaces allows only its configured development origin and production still rejects it", async context => {
+  const environment = {
+    CODESPACES: "true",
+    CODESPACE_NAME: "test-workspace",
+    GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: "app.github.dev",
+  };
+  for (const [name, value] of Object.entries(environment)) {
+    const previous = process.env[name];
+    process.env[name] = value;
+    context.after(() => {
+      if (previous === undefined) delete process.env[name];
+      else process.env[name] = previous;
+    });
+  }
+  const origin = "https://test-workspace-5173.app.github.dev";
+  const send = await fixture(context, false);
+  const response = await send("/api/reviews", "POST", { authorization: auth, origin });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers["access-control-allow-origin"], origin);
+  assert.equal((await send("/api/reviews", "OPTIONS", { origin })).status, 204);
+  for (const otherOrigin of ["https://other-workspace-5173.app.github.dev", "https://test-workspace-3001.app.github.dev", "http://test-workspace-5173.app.github.dev"]) {
+    assert.equal((await send("/api/reviews", "POST", { authorization: auth, origin: otherOrigin })).status, 403);
+  }
+  const production = await fixture(context);
+  assert.equal((await production("/api/reviews", "POST", { authorization: auth, origin })).status, 403);
 });
 
 test("published deck JSON is served intact with auth while other JSON remains blocked", async context => {

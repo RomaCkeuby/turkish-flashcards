@@ -1,24 +1,28 @@
 # Turkish Flashcards — работа из облака
 
-Состояние проверено 5 ноября 2026 года. Есть три разные версии приложения.
+Состояние проверено 9 ноября 2026 года. Есть три разные версии приложения.
 
 | Версия | Где работает | Что доступно при выключенном ПК |
 | --- | --- | --- |
 | Опубликованная гостевая | [GitHub Pages](https://romackeuby.github.io/turkish-flashcards/) | Публичный словарь из 600 записей, поиск, фильтры и тренировка в двух направлениях. Оценки относятся к текущему проходу. |
 | Рабочая персональная | Node.js и SQLite на домашнем ПК, HTTPS через Cloudflare Tunnel | При выключенном ПК сервер и текущий личный прогресс недоступны. |
-| Облачный пилот | Код в рабочей копии, целевой хостинг Cloudflare Pages + Supabase | После выпуска пилота доступны вход, чтение закрытого словаря и отдельный прогресс каждого аккаунта. Действующий адрес пилота не подтверждён. |
+| Облачный пилот | Код в ветке `codex/cloud-pilot`, целевой хостинг Cloudflare Pages + Supabase | После выпуска пилота доступны вход, чтение закрытого словаря и отдельный прогресс каждого аккаунта. Действующий адрес пилота не подтверждён. |
+
+Для разработки создан [Codespace fluffy invention](https://fluffy-invention-97v9pw6q96j2xgwx.github.dev/) в Europe West, 2-core. [Приложение в Codespaces](https://fluffy-invention-97v9pw6q96j2xgwx-5173.app.github.dev/) доступно владельцу GitHub через приватный порт `5173`. В нём работает серверный режим с отдельной SQLite и начальной коллекцией из 250 записей. Процессы Vite и Node выполняются в Codespace. Личная база домашнего ПК хранится отдельно.
+
+После автоматической остановки откройте Codespace, нажмите **Restart codespace**, затем в его терминале выполните `nvm use 22.18.0` и `pnpm dev`. Окружение уже содержит зависимости и pnpm `11.9.0`. Приложение доступно, пока Codespace и `pnpm dev` работают.
 
 ## Опубликованный код и сайт
 
 - Репозиторий `RomaCkeuby/turkish-flashcards`. Удалённая ветка `codex/hybrid-offline-accounts` указывает на `0a69f955c6616f649368c31d38c15e6250bb8c39` от 2 ноября. `main` указывает на `ed788852370edda97c61c99c7cf09aa949ac0c38`. [Рабочая ветка на GitHub](https://github.com/RomaCkeuby/turkish-flashcards/tree/codex/hybrid-offline-accounts)
 - Последний успешный выпуск GitHub Pages собран из `0a69f95` 2 ноября в 17:04 МСК. 5 ноября главная страница вернула HTTP 200. [Выпуск в GitHub Actions](https://github.com/RomaCkeuby/turkish-flashcards/actions/runs/41458436925)
 - Для занятий сразу открывается [тренировка TR → RU](https://romackeuby.github.io/turkish-flashcards/#/study?direction=tr-ru). Для первого открытия нужен интернет. Пункт перехода на свой сервер в гостевом интерфейсе ведёт к экземпляру, которому нужен работающий ПК.
-- Поверх `0a69f95` на ПК есть незакоммиченные изменения, включая новые файлы. Среди них облачный адаптер и Auth, миграции PostgreSQL, скрипты снимка и импорта, CI пилота, изменения фильтров и учебных клавиш, серверные исправления и Windows-автозапуск. У этой версии пока нет SHA на GitHub. Состояние кабинетов Cloudflare и Supabase в этой проверке не подтверждалось. [Описание реализации](CLOUD-MIGRATION.md)
+- Рабочая копия поверх `0a69f95` сохранена коммитом `435a7d24ee7c76b209df424b4cbc19f77d935f62` и отправлена в `codex/cloud-pilot`. В неё вошли облачный адаптер и Auth, миграции PostgreSQL, скрипты снимка и импорта, CI пилота, изменения фильтров и учебных клавиш, серверные исправления и Windows-автозапуск. Дальнейшие исправления для Codespaces находятся в этой же ветке. Состояние кабинетов Cloudflare и Supabase в этой проверке не подтверждалось. [Облачная ветка](https://github.com/RomaCkeuby/turkish-flashcards/tree/codex/cloud-pilot)
 
 ## Редактирование и запуск в браузере
 
-1. Для опубликованного кода откройте ветку `codex/hybrid-offline-accounts` на GitHub и выберите **Code → Codespaces**. Доступ зависит от аккаунта GitHub и его квоты. [Создание Codespace](https://docs.github.com/en/codespaces/developing-in-a-codespace/creating-a-codespace-for-a-repository)
-2. Для самой свежей рабочей копии сначала сохраните её с включённого ПК. Проверьте `git status --short --untracked-files=all`, просмотрите новые файлы и подготовьте коммит из исходников, тестов, миграций и документации. Отправка в отдельную ветку, например `codex/cloud-pilot`, позволит открыть её в Codespaces и запустить проверки без автоматической публикации гостевого сайта. Workflow GitHub Pages срабатывает на push в `main` и `codex/hybrid-offline-accounts`, если в ветке есть этот workflow. Перед отправкой проверьте `git diff --cached --name-status` и содержимое коммита.
+1. Для актуального кода откройте готовый Codespace по ссылке выше. Для нового окружения выберите ветку `codex/cloud-pilot` на GitHub и **Code → Codespaces**. Доступ зависит от аккаунта GitHub и его квоты. [Создание Codespace](https://docs.github.com/en/codespaces/developing-in-a-codespace/creating-a-codespace-for-a-repository)
+2. Дальнейшие изменения сохраняйте коммитами и отправляйте на GitHub. Ветка `codex/cloud-pilot` запускает проверки CI. Workflow GitHub Pages срабатывает на push в `main` и `codex/hybrid-offline-accounts`, если в ветке есть этот workflow. Перед отправкой проверьте `git diff --cached --name-status` и содержимое коммита.
 3. В корне проекта выполните команды ниже. CI закрепляет Node.js `22.18.0` и pnpm `11.9.0`. В Codespaces при наличии `nvm` версия Node выбирается командами `nvm install 22.18.0` и `nvm use 22.18.0`. Если нужной версии pnpm ещё нет, установите `npm install --global pnpm@11.9.0`. [Установка pnpm](https://pnpm.io/installation)
 
    ```bash
@@ -31,6 +35,8 @@
    ```
 
 4. Откройте приватный порт `5173` из панели **Ports**. Vite отправляет `/api` внутри Codespace на порт `3001`. Для разработки достаточно открыть `5173`, а SQLite создастся в окружении Codespace с начальными данными. Сайт в Codespace доступен, пока запущено окружение. [Проброс портов в Codespaces](https://docs.github.com/en/codespaces/developing-in-a-codespace/forwarding-ports-in-your-codespace)
+
+В готовом окружении исправлена смешанная установка npm/pnpm, которая вызывала ошибку нескольких копий React. Зависимости установлены заново только через pnpm. Сервер в режиме разработки разрешает точный HTTPS-адрес порта `5173`, вычисленный из `CODESPACE_NAME` и `GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN`. Остальные адреса Codespaces отклоняются, production сохраняет прежнюю проверку Origin.
 
 | Команда из корня | Результат |
 | --- | --- |
@@ -72,3 +78,5 @@
 | `.github/workflows/pages.yml`, `.github/workflows/cloud-check.yml` | Публикация гостевой версии и проверки пилота. CI пилота не публикует сайт. |
 
 5 ноября локально прошли `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm build:static` и `pnpm build:cloud`. Для последней сборки использованы фиктивные настройки CI. Проверка состава подтвердила 22 файла интерфейса и публичной подборки. Снимок M0 прошёл проверку целостности и восстановление в PGlite с проверкой словаря, обеих очередей и назначения прогресса. Эти проверки выполнялись на Node.js `22.18.0` и pnpm `11.25.0`. Удалённые Supabase Auth/JWT, SMTP, конкурентные запросы, запуск в Codespaces и публикация пилота ещё требуют проверки в реальных окружениях.
+
+9 ноября сохранённая версия прошла проверки типов, 83 теста и сборку непосредственно в Codespaces на Node.js `22.18.0` и pnpm `11.9.0`. GitHub Actions также успешно проверил обычную и облачную сборки, а отдельный job Supabase CLI выполнил reset, pgTAP и lint. Для поддержки записи оценок через адрес Codespaces добавлен отдельный регрессионный тест Origin. Hosted Supabase Auth/JWT, SMTP и публикация постоянного пилота остаются следующими этапами. [CI приложения](https://github.com/RomaCkeuby/turkish-flashcards/actions/runs/42591213932), [CI облачного пилота и Supabase CLI](https://github.com/RomaCkeuby/turkish-flashcards/actions/runs/42591213912)
