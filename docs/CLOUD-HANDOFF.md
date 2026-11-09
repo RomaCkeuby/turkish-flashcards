@@ -36,7 +36,7 @@
 
 4. Откройте приватный порт `5173` из панели **Ports**. Vite отправляет `/api` внутри Codespace на порт `3001`. Для разработки достаточно открыть `5173`, а SQLite создастся в окружении Codespace с начальными данными. Сайт в Codespace доступен, пока запущено окружение. [Проброс портов в Codespaces](https://docs.github.com/en/codespaces/developing-in-a-codespace/forwarding-ports-in-your-codespace)
 
-В готовом окружении исправлена смешанная установка npm/pnpm, которая вызывала ошибку нескольких копий React. Зависимости установлены заново только через pnpm. Сервер в режиме разработки разрешает точный HTTPS-адрес порта `5173`, вычисленный из `CODESPACE_NAME` и `GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN`. Остальные адреса Codespaces отклоняются, production сохраняет прежнюю проверку Origin.
+В готовом окружении исправлена смешанная установка npm/pnpm, которая вызывала ошибку нескольких копий React. Зависимости установлены заново только через pnpm. В Codespaces сервер в режиме разработки разрешает точный HTTPS-адрес порта `5173`, вычисленный из `CODESPACE_NAME` и `GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN`, и `https://localhost:5173`, в который туннель GitHub преобразует Origin браузера. Остальные адреса Codespaces отклоняются, production сохраняет прежнюю проверку Origin.
 
 | Команда из корня | Результат |
 | --- | --- |

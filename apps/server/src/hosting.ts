@@ -47,6 +47,8 @@ export function createSiteHandler(apiHandler: ApiHandler, options: SiteOptions):
   if (!options.production && process.env.CODESPACES === "true" &&
       process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN) {
     developmentOrigins.add(`https://${process.env.CODESPACE_NAME}-5173.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`);
+    // GitHub's port tunnel rewrites a matching browser Origin to HTTPS localhost.
+    developmentOrigins.add("https://localhost:5173");
   }
 
   return async (request, response) => {

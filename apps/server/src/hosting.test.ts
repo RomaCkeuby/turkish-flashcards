@@ -119,11 +119,17 @@ test("Codespaces allows only its configured development origin and production st
   assert.equal(response.status, 200);
   assert.equal(response.headers["access-control-allow-origin"], origin);
   assert.equal((await send("/api/reviews", "OPTIONS", { origin })).status, 204);
-  for (const otherOrigin of ["https://other-workspace-5173.app.github.dev", "https://test-workspace-3001.app.github.dev", "http://test-workspace-5173.app.github.dev"]) {
+  assert.equal((await send("/api/reviews", "POST", { authorization: auth, origin: "https://localhost:5173" })).status, 200);
+  for (const otherOrigin of ["https://other-workspace-5173.app.github.dev", "https://test-workspace-3001.app.github.dev", "http://test-workspace-5173.app.github.dev", "https://localhost:3001"]) {
     assert.equal((await send("/api/reviews", "POST", { authorization: auth, origin: otherOrigin })).status, 403);
   }
   const production = await fixture(context);
   assert.equal((await production("/api/reviews", "POST", { authorization: auth, origin })).status, 403);
+  assert.equal((await production("/api/reviews", "POST", { authorization: auth, origin: "https://localhost:5173" })).status, 403);
+  process.env.CODESPACES = "false";
+  const localDevelopment = await fixture(context, false);
+  assert.equal((await localDevelopment("/api/reviews", "POST", { authorization: auth, origin })).status, 403);
+  assert.equal((await localDevelopment("/api/reviews", "POST", { authorization: auth, origin: "https://localhost:5173" })).status, 403);
 });
 
 test("published deck JSON is served intact with auth while other JSON remains blocked", async context => {
